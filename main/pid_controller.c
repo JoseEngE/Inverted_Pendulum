@@ -67,6 +67,13 @@
 // máxima frecuencia
 #define MAX_FRECUENCY_LIMIT 150000
 
+// --- CONSTANTES FÍSICAS PARA CONVERSIÓN DE VELOCIDAD ---
+// Estas constantes permiten convertir velocidad lineal (m/s) a frecuencia del motor
+#define MOTOR_STEPS_PER_REV 200.0f      // Pasos por revolución del motor (sin microstepping)
+#define MICROSTEPPING_FACTOR 16.0f      // Factor de microstepping (ej: 1/16)
+#define PULLEY_RADIUS_MM 10.0f          // Radio de la polea en mm
+#define TRANSMISSION_RATIO 1.0f         // Relación de transmisión (correa/polea)
+
 /************************************************************************************
  *                        FIN DE LA CONFIGURACIÓN DE PARÁMETROS     *
  ************************************************************************************/
@@ -205,37 +212,10 @@ void pid_controller_task(void *arg) {
     // Usar PID_Compute en lugar del cálculo manual
     float output = PID_Compute(&g_pid_controller, dynamic_setpoint, current_angle);
 
-    // --- AÑADIDO: Filtro de Salida (Paso Bajo Simple) ---
-    // La nueva salida es un 70% de la salida anterior más un 30% de la nueva
-    // calculada. Esto "amortigua" los cambios bruscos. El 0.3 es el "factor de
-    // suavizado".
-    g_smoothed_output = (0.7f * g_smoothed_output) + (0.3f * output);
-
-    // 5. SATURAR LA SALIDA (ahora sobre la salida suavizada)
-    if (g_smoothed_output > MAX_OUTPUT_PULSES)
-      g_smoothed_output = MAX_OUTPUT_PULSES;
-    if (g_smoothed_output < -MAX_OUTPUT_PULSES)
-      g_smoothed_output = -MAX_OUTPUT_PULSES;
-
     // 6. ACTUAR: Si la salida no es cero, enviar comando al motor
-    if (fabs(g_smoothed_output) > 0.1) {
-      int direction = (g_smoothed_output > 0) ? 1 : 0;
-      int frequency = BASE_FREQUENCY +
-                      (int)(fabs(g_smoothed_output) * FREQ_PER_ERROR_PULSE);
-
-      if (frequency > MAX_FRECUENCY_LIMIT) {
-        frequency = MAX_FRECUENCY_LIMIT; // Limitamos la frecuencia máxima
-      }
-
-      // Estimación de odometría: ¿Cuántos pulsos se van a dar en este ciclo
-      // (aprox)?
-      float pulses_this_cycle =
-          (float)frequency * (PID_LOOP_PERIOD_MS / 1000.0f);
-      if (direction == 1) {
-        g_car_position_pulses += (int32_t)pulses_this_cycle;
-      } else {
-        g_car_position_pulses -= (int32_t)pulses_this_cycle;
-      }
+    if (fabs(output) > 0.01) {
+      int direction = (output > 0) ? 1 : 0;
+      int frequency = calculate_motor_frequency(output);
 
       // Enviar el comando de velocidad continua
       motor_command_t cmd = {.num_pulses = 0, // Ignorado por el nuevo enfoque
@@ -303,4 +283,49 @@ float PID_Compute(PIDController *pid, float objetivo, float medicion_actual) {
 void PID_Reset(PIDController *pid) {
     pid->integral = 0.0f;
     pid->ultimo_error = 0.0f;
+}
+
+/**
+ * @brief Calcula la frecuencia del motor basada en una velocidad deseada del carro.
+ */
+int calculate_motor_frequency(float desired_velocity) {
+    int frequency = BASE_FREQUENCY + (int)(fabs(desired_velocity) * FREQ_PER_ERROR_PULSE);
+    
+    if (frequency > MAX_FRECUENCY_LIMIT) {
+        frequency = MAX_FRECUENCY_LIMIT;
+    }
+    
+    return frequency;
+}
+
+/**
+ * @brief Calcula la frecuencia del motor para lograr una velocidad lineal específica del carro.
+ * 
+ * Conversión física:
+ * 1. La velocidad lineal del carro depende del radio de la polea
+ * 2. La frecuencia del motor determina la velocidad de rotación
+ * 3. Fórmula: f = (v_linear * steps_per_rev_effective) / (2π * radius)
+ */
+int velocity_to_motor_frequency(float linear_velocity) {
+    // Calcular pasos efectivos por revolución (considerando microstepping)
+    float effective_steps_per_rev = MOTOR_STEPS_PER_REV * MICROSTEPPING_FACTOR;
+    
+    // Radio en metros
+    float radius_meters = PULLEY_RADIUS_MM / 1000.0f;
+    
+    // Circunferencia efectiva considerando transmisión
+    float effective_circumference = 2.0f * M_PI * radius_meters / TRANSMISSION_RATIO;
+    
+    // Frecuencia = velocidad_lineal * pasos_efectivos / circunferencia
+    float frequency = fabs(linear_velocity) * effective_steps_per_rev / effective_circumference;
+    
+    // Aplicar límites de seguridad
+    if (frequency > MAX_FRECUENCY_LIMIT) {
+        frequency = MAX_FRECUENCY_LIMIT;
+    }
+    if (frequency < BASE_FREQUENCY) {
+        frequency = BASE_FREQUENCY;
+    }
+    
+    return (int)frequency;
 }

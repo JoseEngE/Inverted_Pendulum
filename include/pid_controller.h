@@ -39,6 +39,35 @@ float PID_Compute(PIDController *pid, float objetivo, float medicion_actual);
 void PID_Reset(PIDController *pid);
 
 /**
+ * @brief Calcula la frecuencia del motor basada en una velocidad deseada del carro.
+ * 
+ * La velocidad deseada se expresa en unidades normalizadas donde:
+ * - 0.0 = velocidad base (frecuencia BASE_FREQUENCY)
+ * - 1.0 = velocidad base + 80 Hz adicionales
+ * - Valores negativos se convierten a positivos (magnitud)
+ * 
+ * Fórmula: frecuencia = BASE_FREQUENCY + (velocidad_absoluta * FREQ_PER_ERROR_PULSE)
+ * 
+ * @param desired_velocity Velocidad deseada del carro (unidades normalizadas)
+ * @return Frecuencia del motor en Hz (limitada a MAX_FRECUENCY_LIMIT)
+ */
+int calculate_motor_frequency(float desired_velocity);
+
+/**
+ * @brief Calcula la frecuencia del motor para lograr una velocidad lineal específica del carro.
+ * 
+ * Esta función usa constantes físicas para la conversión precisa:
+ * - Radio de la polea de transmisión
+ * - Pasos por revolución del motor
+ * - Factor de microstepping
+ * - Relación de transmisión
+ * 
+ * @param linear_velocity Velocidad lineal deseada del carro en m/s
+ * @return Frecuencia del motor en Hz
+ */
+int velocity_to_motor_frequency(float linear_velocity);
+
+/**
  * @brief Tarea principal del controlador PID.
  * Se ejecuta a una frecuencia fija para leer el sensor y controlar el motor.
  */
