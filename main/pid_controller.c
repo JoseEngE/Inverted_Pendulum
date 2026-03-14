@@ -80,7 +80,6 @@
 
 // Calculamos el tiempo del ciclo en segundos (dt) una sola vez.
 // static const float PID_LOOP_PERIOD_S = PID_LOOP_PERIOD_MS / 1000.0f;
-static float g_smoothed_output = 0.0;
 static const char *TAG = "PID_CONTROLLER";
 
 // Variables de estado globales para el controlador
