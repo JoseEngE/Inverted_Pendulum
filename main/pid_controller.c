@@ -225,7 +225,7 @@ void pid_controller_task(void *arg) {
     
     // Integrador: convierte aceleración a velocidad (PID con solo Ki=1)
     // El "error" para el integrador es la aceleración de salida del PID de ángulo
-    float velocity = PID_Compute(&g_velocity_integrator, 0.0f, -acceleration);
+    float velocity = PID_Compute(&g_velocity_integrator, acceleration, 0.0f);
 
     // 6. ACTUAR: Establecer la velocidad del motor
     set_motor_velocity(velocity);
