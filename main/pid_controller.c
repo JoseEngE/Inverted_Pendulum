@@ -54,7 +54,7 @@
 // para errores grandes. La frecuencia final será:
 // Frecuencia = BASE_FREQUENCY + (Error * FREQ_PER_ERROR_PULSE)
 #define FREQ_PER_ERROR_PULSE                                                   \
-  150 // Aumentado de 80 a 250 para que acelere más rápido
+  250 // Aumentado de 80 a 250 para que acelere más rápido
 
 // Ganancia Proporcional para la posición del carro. Convierte el error de
 // posición en un pequeño ángulo de inclinación deseado (en cuentas del
