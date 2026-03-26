@@ -127,4 +127,9 @@ float pid_get_kp(void);
 float pid_get_ki(void);
 float pid_get_kd(void);
 
+// --- Funciones para monitoreo en LCD ---
+float pid_get_position_setpoint(void);
+int16_t pid_get_dynamic_angle_setpoint(void);
+float pid_get_velocity(void);
+
 #endif // PID_CONTROLLER_H

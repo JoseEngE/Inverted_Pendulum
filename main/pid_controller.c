@@ -37,13 +37,13 @@
 
 // Evita que el término integral crezca indefinidamente y desestabilice el
 // sistema. Este valor debe ser menor o igual a MAX_OUTPUT_PULSES.
-#define MAX_INTEGRAL 9000.0f
+#define MAX_INTEGRAL 130000.0f
 
 // --- PARÁMETROS DEL ACTUADOR (MOTOR) ---
 // Límite máximo de pulsos que el PID puede ordenar en una sola corrección.
 // Sirve como medida de seguridad para evitar que una reacción brusca del PID
 // genere un movimiento demasiado violento.
-#define MAX_OUTPUT_PULSES 10000 // Aumentado de 1700 a 3000 para mayor salida
+#define MAX_OUTPUT_PULSES 130000 // Aumentado de 1700 a 3000 para mayor salida
 
 // Frecuencia base (velocidad mínima) para los movimientos de corrección.
 #define BASE_FREQUENCY                                                         \
@@ -99,6 +99,11 @@ static PIDController g_velocity_integrator; // Integrador: convierte aceleració
 // --- Variable para el angulo del pendulo ---
 static volatile int16_t g_absolute_setpoint =
     0; // Se inicializa en 0 por defecto
+
+// Variables globales para monitoreo en LCD
+static volatile float g_current_position_setpoint = 0.0f;
+static volatile int16_t g_current_dynamic_angle_setpoint = 0;
+static volatile float g_current_velocity = 0.0f;
 
 // --- Variable para la posición del carro ---
 volatile int32_t g_car_position_pulses = 0; // pwm_generator puede actualizarla
@@ -166,6 +171,12 @@ void pid_set_kd(float kd) {
 // --- AÑADIDO: Implementación de la nueva función 'getter' ---
 int16_t pid_get_setpoint(void) { return g_absolute_setpoint; }
 
+float pid_get_position_setpoint(void) { return g_current_position_setpoint; }
+int16_t pid_get_dynamic_angle_setpoint(void) {
+  return g_current_dynamic_angle_setpoint;
+}
+float pid_get_velocity(void) { return g_current_velocity; }
+
 // --- AÑADIDO: Implementación de la función de deshabilitación forzada ---
 void pid_force_disable(void) {
   if (g_pid_enabled) { // Solo actúa y muestra el mensaje si estaba habilitado
@@ -195,9 +206,8 @@ void pid_controller_task(void *arg) {
            -MAX_OUTPUT_PULSES, MAX_OUTPUT_PULSES, DEAD_BAND_ANGLE);
 
   // Inicializar el controlador de posición (solo proporcional)
-  PID_Init(&g_position_controller, POSITION_CONTROL_GAIN, 0.0f, 0.0f,
-           loop_period_in_seconds, -MAX_SETPOINT_OFFSET, MAX_SETPOINT_OFFSET,
-           DEAD_BAND_X_CM);
+  PID_Init(&g_position_controller, 1.0f, 0.0f, 0.0f, loop_period_in_seconds,
+           -MAX_SETPOINT_OFFSET, MAX_SETPOINT_OFFSET, DEAD_BAND_X_CM);
 
   // Inicializar el integrador de velocidad (solo I, ganancia 1)
   // Convierte la aceleración (salida del PID) a velocidad
@@ -229,9 +239,15 @@ void pid_controller_task(void *arg) {
     float angle_setpoint_offset = PID_Compute(
         &g_position_controller, position_setpoint, g_car_position_pulses);
 
+    // Guardar para el LCD
+    g_current_position_setpoint = position_setpoint;
+
     // Calcular el setpoint dinámico
     int16_t dynamic_angle_setpoint =
         g_absolute_setpoint + (int16_t)angle_setpoint_offset;
+
+    // Guardar para el LCD
+    g_current_dynamic_angle_setpoint = dynamic_angle_setpoint;
 
     // 2. CALCULAR ERROR de ángulo usando el setpoint dinámico
     // La salida del PID es aceleración, se integra a velocidad
@@ -242,6 +258,9 @@ void pid_controller_task(void *arg) {
     // El "error" para el integrador es la aceleración de salida del PID de
     // ángulo
     float velocity = PID_Compute(&g_velocity_integrator, acceleration, 0.0f);
+
+    // Guardar velocidad para el LCD
+    g_current_velocity = velocity;
 
     // 6. ACTUAR: Establecer la velocidad del motor
     set_motor_velocity(velocity);
@@ -270,7 +289,8 @@ void PID_Init(PIDController *pid, float p, float i, float d, float dt,
 float PID_Compute(PIDController *pid, float objetivo, float medicion_actual) {
   float error = objetivo - medicion_actual;
 
-  // Deadband: si el error está dentro del umbral, se limpia integral y derivativo
+  // Deadband: si el error está dentro del umbral, se limpia integral y
+  // derivativo
   if (fabsf(error) <= pid->deadband) {
     pid->integral = 0.0f;
     pid->ultimo_error = 0.0f;
@@ -372,25 +392,30 @@ int velocity_to_motor_frequency(float linear_velocity) {
  */
 void set_motor_velocity(float velocity) {
   // 6. ACTUAR: Si la salida no es cero, enviar comando al motor
-  if (fabs(velocity) > 0.01) {
-    int direction = (velocity > 0) ? 1 : 0;
-    int frequency = calculate_motor_frequency(velocity);
+  if (fabs(velocity) > 200) {
+  int direction = (velocity > 0) ? 1 : 0;
+  // int frequency = calculate_motor_frequency(velocity);
+  int frequency = 0;
+  if (fabs(velocity) < BASE_FREQUENCY) {
+    frequency = BASE_FREQUENCY;
+  } else {
+    frequency = (int)fabs(velocity);
+  }
 
-    // Estimación de odometría: ¿Cuántos pulsos se van a dar en este ciclo
-    // (aprox)?
-    float pulses_this_cycle =
-        (float)frequency * (PID_LOOP_PERIOD_MS / 1000.0f);
-    if (direction == 1) {
-      g_car_position_pulses += (int32_t)pulses_this_cycle;
-    } else {
-      g_car_position_pulses -= (int32_t)pulses_this_cycle;
-    }
+  // Estimación de odometría: ¿Cuántos pulsos se van a dar en este ciclo
+  // (aprox)?
+  float pulses_this_cycle = (float)frequency * (PID_LOOP_PERIOD_MS / 1000.0f);
+  if (direction == 1) {
+    g_car_position_pulses += (int32_t)pulses_this_cycle;
+  } else {
+    g_car_position_pulses -= (int32_t)pulses_this_cycle;
+  }
 
-    // Enviar el comando de velocidad continua
-    motor_command_t cmd = {.num_pulses = 0, // Ignorado por el nuevo enfoque
-                           .frequency = frequency,
-                           .direction = direction};
-    xQueueOverwrite(motor_command_queue, &cmd);
+  // Enviar el comando de velocidad continua
+  motor_command_t cmd = {.num_pulses = 0, // Ignorado por el nuevo enfoque
+                         .frequency = frequency,
+                         .direction = direction};
+  xQueueOverwrite(motor_command_queue, &cmd);
   } else {
     // Si la salida del PID es cercana a cero, apagamos el motor.
     motor_command_t stop_cmd = {
