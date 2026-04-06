@@ -202,16 +202,16 @@ void pid_controller_task(void *arg) {
   TickType_t last_wake_time = xTaskGetTickCount();
 
   // Inicializar el controlador PID (Salida en aceleración m/s^2)
-  PID_Init(&g_angle_controller, 0.1f, 0.01f, 0.0f, loop_period_in_seconds,
-           -0.72f, 0.72f, DEAD_BAND_ANGLE);
+  PID_Init(&g_angle_controller, 6.0f, 0.01f, 0.03f, loop_period_in_seconds,
+           -1.72f, 1.72f, DEAD_BAND_ANGLE);
 
   // Inicializar el controlador de posición (solo proporcional)
-  PID_Init(&g_position_controller, 1, 0.0f, 0.0f, loop_period_in_seconds,
+  PID_Init(&g_position_controller, 0.2, 0.0f, 0.0041f, loop_period_in_seconds,
            -MAX_SETPOINT_OFFSET, MAX_SETPOINT_OFFSET, DEAD_BAND_X_M);
 
   // Inicializar el integrador de velocidad (solo I, ganancia 1)
   // Convierte la aceleración m/s^2 a velocidad m/s
-  PID_Init(&g_velocity_integrator, 1.0f, 0.0f, 0.0f, loop_period_in_seconds,
+  PID_Init(&g_velocity_integrator, 0.1f, 0.95f, 0.0f, loop_period_in_seconds,
            -2.72f, 2.72f, 0.0f);
 
   // Reseteamos el error anterior al habilitar para evitar un pico inicial en D
