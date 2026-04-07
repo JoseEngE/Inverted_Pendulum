@@ -114,6 +114,12 @@ bool pid_is_enabled(void);
 // para parada de emergencia.
 
 void pid_force_disable(void);
+
+/**
+ * @brief Obtiene el tiempo transcurrido en milisegundos desde que se habilitó el PID.
+ * @return Tiempo en ms. Devuelve 0 si el PID está deshabilitado.
+ */
+uint64_t pid_get_run_time_ms(void);
 /**
  * @brief Establece la velocidad del motor.
  * Si la velocidad es cero o cercana a cero, detiene el motor.
