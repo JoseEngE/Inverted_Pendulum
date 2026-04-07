@@ -9,6 +9,7 @@
 #include <math.h> // Para la función de valor absoluto fabs()
 #include <stdint.h>
 #include <stdio.h>
+#include "esp_timer.h" // Para esp_timer_get_time()
 
 /************************************************************************************
  *                                                                                  *
@@ -91,6 +92,7 @@ float const loop_period_in_seconds = PID_LOOP_PERIOD_MS / 1000.0f;
 // para 3200pulse/rev kp=5, ki=1, kd=10, para 2000pulse/rev kp=70, ki=1, kd=10,
 // para 10000pulse/rev kp=41, ki=0.4, kd=70
 static volatile bool g_pid_enabled = false;
+static uint64_t g_pid_start_time_us = 0;
 static PIDController
     g_angle_controller; // Controlador del ángulo (PID completo)
 static PIDController g_position_controller; // Controlador de posición (solo P)
@@ -129,6 +131,8 @@ void pid_toggle_enable(void) {
     // int16_t current_position = pulse_counter_get_value();
     // 2. Establecer esa posición como nuestro nuevo punto de equilibrio.
     // g_absolute_setpoint = current_position;
+
+    g_pid_start_time_us = esp_timer_get_time();
 
     // Inicializar el controlador PID si no está inicializado
     if (g_angle_controller.dt == 0.0f) {
@@ -181,6 +185,7 @@ float pid_get_velocity(void) { return g_current_velocity; }
 void pid_force_disable(void) {
   if (g_pid_enabled) { // Solo actúa y muestra el mensaje si estaba habilitado
     g_pid_enabled = false;
+    g_pid_start_time_us = 0;
     // Reseteamos el estado para un futuro arranque limpio
     PID_Reset(&g_angle_controller);
     PID_Reset(&g_position_controller);
@@ -195,6 +200,11 @@ void pid_force_disable(void) {
 }
 
 bool pid_is_enabled(void) { return g_pid_enabled; }
+
+uint64_t pid_get_run_time_ms(void) {
+    if (!g_pid_enabled || g_pid_start_time_us == 0) return 0;
+    return (esp_timer_get_time() - g_pid_start_time_us) / 1000;
+}
 
 // --- Tarea Principal del Controlador ---
 
@@ -265,8 +275,8 @@ void pid_controller_task(void *arg) {
 
     // 2. CALCULAR ERROR de ángulo usando el setpoint dinámico
     // La salida del PID es aceleración, se integra a velocidad
-    float acceleration = PID_Compute(
-        &g_angle_controller, dynamic_angle_setpoint, adjusted_current_angle);
+    float acceleration =
+        PID_Compute(&g_angle_controller, g_absolute_setpoint, current_angle_rad);
 
     // Integrador: convierte aceleración a velocidad (PID con solo Ki=1)
     float velocity = PID_Compute(&g_velocity_integrator, acceleration, 0.0f);

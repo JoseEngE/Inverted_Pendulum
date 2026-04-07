@@ -15,6 +15,7 @@
 #include "freertos/queue.h"
 #include "lcd_controller.h" // ¡Solo incluimos nuestro módulo!
 #include "system_status.h"
+#include "bluetooth_telemetry.h" // Módulo Bluetooth
 
 #define USE_STATE_SPACE_CONTROLLER 1
 
@@ -29,10 +30,18 @@ QueueHandle_t motor_command_queue;
 
 void app_main(void)
 {
+  // Inicialización de NVS (necesario para Bluetooth)
+  esp_err_t ret = nvs_flash_init();
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+      ESP_ERROR_CHECK(nvs_flash_erase());
+      ret = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK(ret);
 
   pwm_init();           // inicializa y configura pines del driver
   pulse_counter_init(); // inicializa y configura pines del encoder
   lcd_init();           // Inicializar la pantalla
+  bluetooth_telemetry_init(); // Inicializar servicio de telemetría Bluetooth
 
   // Mensaje de bienvenida en la pantalla
   lcd_clear();
