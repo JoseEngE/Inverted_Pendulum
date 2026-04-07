@@ -1,10 +1,7 @@
 CompileFlags:
-  CompilationDatabase: build
-  Remove: 
-    - -m*
-    - -fno-tree-sink
-    - -mlongcalls
-    - -fstrict-volatile-bitfields
-  Add: 
-    - --target=xtensa-esp32-elf
-    - -I${ESP_IDF_PATH}/components/newlib/platform_include
+  Add:
+    - "-Wno-undef"
+  Remove:
+    - "-fstrict-volatile-bitfields"
+    - "-fno-shrink-wrap"
+    - "-fno-tree-switch-conversion"
