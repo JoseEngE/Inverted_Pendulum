@@ -82,6 +82,8 @@ void motor_control_task(void *arg);
  * Función segura para ser llamada desde otras tareas (ej. el manejador del botón).
  */
 void pid_toggle_enable(void);
+void pid_enable(void);
+void pid_disable(void);
 
 /**
  * @brief Establece el valor de la ganancia Proporcional (Kp).
@@ -135,6 +137,8 @@ float pid_get_kd(void);
 
 // --- Funciones para monitoreo en LCD ---
 float pid_get_position_setpoint(void); // en metros
+void pid_set_position_setpoint_m(float m);
+float pid_get_position_setpoint_m(void);
 float pid_get_dynamic_angle_setpoint_rad(void);
 float pid_get_velocity(void);
 
