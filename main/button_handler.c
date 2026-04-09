@@ -43,7 +43,7 @@ manual (alta) #define MANUAL_MOVE_PULSES   400   // Cantidad de pulsos por ciclo
 
 // --- PARÁMETROS DE SINTONÍA PID ---
 #define PID_SHORT_PRESS_STEP 0.1f // Paso para pulsación corta (1 paso)
-#define PID_LONG_PRESS_STEP 10.0f // Paso para pulsación larga (3 pasos)
+#define PID_LONG_PRESS_STEP 1.0f  // Paso para pulsación larga (3 pasos)
 #define PID_LONG_PRESS_THRESHOLD                                               \
   20 // Umbral para detectar pulsación larga (20 * 10ms = 200ms)
 #define PID_PRESS_DURATION_MAX                                                 \
@@ -177,17 +177,17 @@ void button_handler_task(void *arg) {
                                .frequency = JOG_SPEED_HZ,
                                .direction = 0};
         xQueueOverwrite(motor_command_queue, &cmd);
-        
+
         if (!jogging_active || last_jog_direction != 0) {
-            last_jog_time = esp_timer_get_time();
-            jogging_active = true;
-            last_jog_direction = 0;
+          last_jog_time = esp_timer_get_time();
+          jogging_active = true;
+          last_jog_direction = 0;
         } else {
-            int64_t current_time = esp_timer_get_time();
-            int64_t dt_us = current_time - last_jog_time;
-            int32_t pulses_moved = (int32_t)((dt_us * JOG_SPEED_HZ) / 1000000);
-            g_car_position_pulses -= pulses_moved;
-            last_jog_time = current_time;
+          int64_t current_time = esp_timer_get_time();
+          int64_t dt_us = current_time - last_jog_time;
+          int32_t pulses_moved = (int32_t)((dt_us * JOG_SPEED_HZ) / 1000000);
+          g_car_position_pulses -= pulses_moved;
+          last_jog_time = current_time;
         }
       }
       // Si se presiona el botón derecho Y no el izquierdo
@@ -199,17 +199,17 @@ void button_handler_task(void *arg) {
                                .frequency = JOG_SPEED_HZ,
                                .direction = 1};
         xQueueOverwrite(motor_command_queue, &cmd);
-        
+
         if (!jogging_active || last_jog_direction != 1) {
-            last_jog_time = esp_timer_get_time();
-            jogging_active = true;
-            last_jog_direction = 1;
+          last_jog_time = esp_timer_get_time();
+          jogging_active = true;
+          last_jog_direction = 1;
         } else {
-            int64_t current_time = esp_timer_get_time();
-            int64_t dt_us = current_time - last_jog_time;
-            int32_t pulses_moved = (int32_t)((dt_us * JOG_SPEED_HZ) / 1000000);
-            g_car_position_pulses += pulses_moved;
-            last_jog_time = current_time;
+          int64_t current_time = esp_timer_get_time();
+          int64_t dt_us = current_time - last_jog_time;
+          int32_t pulses_moved = (int32_t)((dt_us * JOG_SPEED_HZ) / 1000000);
+          g_car_position_pulses += pulses_moved;
+          last_jog_time = current_time;
         }
       } else {
         // Si no se presiona ningún botón o ambos (o hay choque de límites),
@@ -221,11 +221,11 @@ void button_handler_task(void *arg) {
           int64_t dt_us = current_time - last_jog_time;
           int32_t pulses_moved = (int32_t)((dt_us * JOG_SPEED_HZ) / 1000000);
           if (last_jog_direction == 0) {
-              g_car_position_pulses -= pulses_moved;
+            g_car_position_pulses -= pulses_moved;
           } else if (last_jog_direction == 1) {
-              g_car_position_pulses += pulses_moved;
+            g_car_position_pulses += pulses_moved;
           }
-          
+
           motor_command_t stop_cmd = {
               .num_pulses = 0, .frequency = 0, .direction = 0};
           xQueueOverwrite(motor_command_queue, &stop_cmd);
@@ -309,8 +309,8 @@ void button_handler_task(void *arg) {
 
 void button_handler_start_calibration(void) {
   if (pid_is_enabled()) {
-      ESP_LOGE(TAG, "No se puede calibrar con el PID habilitado.");
-      return;
+    ESP_LOGE(TAG, "No se puede calibrar con el PID habilitado.");
+    return;
   }
 
   ESP_LOGW(TAG, "--- INICIANDO RUTINA DE CALIBRACIÓN DE LÍMITES ---");
@@ -328,9 +328,8 @@ void button_handler_start_calibration(void) {
   // Leemos el estado del pin directamente. El bucle continúa MIENTRAS
   // el botón NO esté presionado.
   while (gpio_get_level(EMERGENCY_STOP_GPIO_RIGHT) == 1) {
-    int pulses_moved =
-        execute_movement(JOG_PULSES, CALIBRATION_SPEED_HZ,
-                         0); // Dir 0 = Izquierda
+    int pulses_moved = execute_movement(JOG_PULSES, CALIBRATION_SPEED_HZ,
+                                        0); // Dir 0 = Izquierda
     g_car_position_pulses -= pulses_moved;
   }
   // --- El bucle se rompe en cuanto el pin se va a BAJO ---
@@ -341,9 +340,8 @@ void button_handler_start_calibration(void) {
   // 2. Mover a la derecha hasta que el final de carrera se active
   ESP_LOGI(TAG, "Buscando límite izquierdo...");
   while (gpio_get_level(EMERGENCY_STOP_GPIO_LEFT) == 1) {
-    int pulses_moved =
-        execute_movement(JOG_PULSES, CALIBRATION_SPEED_HZ,
-                         1); // Dir 1 = Derecha
+    int pulses_moved = execute_movement(JOG_PULSES, CALIBRATION_SPEED_HZ,
+                                        1); // Dir 1 = Derecha
     g_car_position_pulses += pulses_moved;
   }
   limit_right_pos = g_car_position_pulses;
@@ -353,21 +351,18 @@ void button_handler_start_calibration(void) {
   // 3. Calcular el centro y mover el carro
   int32_t travel_range = abs(limit_right_pos - limit_left_pos);
   int32_t center_pos = limit_left_pos + (travel_range / 2);
-  ESP_LOGW(TAG, "Recorrido: %ld pulsos. Centro: %ld", travel_range,
-           center_pos);
+  ESP_LOGW(TAG, "Recorrido: %ld pulsos. Centro: %ld", travel_range, center_pos);
 
   ESP_LOGI(TAG, "Moviendo al centro...");
 
   int32_t pulses_to_center = abs(center_pos - g_car_position_pulses);
-  int direction_to_center =
-      (center_pos > g_car_position_pulses) ? 1 : 0;
+  int direction_to_center = (center_pos > g_car_position_pulses) ? 1 : 0;
   execute_movement(pulses_to_center, JOG_SPEED_HZ, direction_to_center);
   g_car_position_pulses = 0;
 
   ESP_LOGW(TAG, "--- CALIBRACIÓN FINALIZADA. Posición: %ld ---",
            g_car_position_pulses);
-  ESP_LOGI(TAG,
-           "Esperando 5 segundos para estabilizar..."); 
+  ESP_LOGI(TAG, "Esperando 5 segundos para estabilizar...");
 
   vTaskDelay(pdMS_TO_TICKS(5000));
 
@@ -380,17 +375,16 @@ void button_handler_start_calibration(void) {
 
   // 2. Calcular la posición vertical (180 grados de diferencia).
   int32_t vertical_setpoint_32 = fallen_pos + (ENCODER_RESOLUTION / 2);
-  float vertical_setpoint_rad = ((float)vertical_setpoint_32 / ENCODER_RESOLUTION) * 2.0f * 3.14159265f;
+  float vertical_setpoint_rad =
+      ((float)vertical_setpoint_32 / ENCODER_RESOLUTION) * 2.0f * 3.14159265f;
 
   // 3. Establecer el setpoint calculado en radianes.
   pid_set_absolute_setpoint_rad(vertical_setpoint_rad);
 
-  ESP_LOGW(
-      TAG,
-      "Setpoint vertical pre-calculado: %.3f rad. El sistema está listo.",
-      vertical_setpoint_rad);
   ESP_LOGW(TAG,
-           "Levante el péndulo y presione el botón de habilitar PID.");
+           "Setpoint vertical pre-calculado: %.3f rad. El sistema está listo.",
+           vertical_setpoint_rad);
+  ESP_LOGW(TAG, "Levante el péndulo y presione el botón de habilitar PID.");
 
   // devolvemos a la vista actual antes de la calibracion
   g_lcd_view_state = (lcd_view_state_t)actual_view_int;
