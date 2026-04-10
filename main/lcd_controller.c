@@ -12,6 +12,7 @@
 #include "system_status.h"
 #include "driver/gpio.h"
 #include "esp_rom_sys.h"
+#include "state_space_controller.h" // AÑADIDO para el estado SS
 
 // --- CONFIGURACIÓN DEL BUS I2C Y PANTALLA ---
 #define I2C_MASTER_PORT I2C_NUM_0      // Puerto I2C a usar (0 o 1)
@@ -175,6 +176,7 @@ void lcd_display_task(void *pvParameters)
         case VIEW_MAIN_STATUS:
         {
             bool is_pid_on = pid_is_enabled();
+            bool is_ss_on = ss_is_enabled();
             manual_move_state_t move_state = status_get_manual_move_state();
 
             // Línea 1: Estado prioritario
@@ -188,7 +190,13 @@ void lcd_display_task(void *pvParameters)
             }
             else
             {
-                lcd_printf_line(0, "PID: %s", is_pid_on ? "ACTIVO" : "INACTIVO");
+                if (is_pid_on) {
+                    lcd_printf_line(0, "PID: ACTIVO");
+                } else if (is_ss_on) {
+                    lcd_printf_line(0, "LQR: ACTIVO");
+                } else {
+                    lcd_printf_line(0, "CTRL: INACTIVO");
+                }
             }
 
             // Línea 2: Posición en grados
@@ -262,6 +270,18 @@ void lcd_display_task(void *pvParameters)
         {
             lcd_printf_line(0, "Calibrando...");
             lcd_printf_line(1, "Espere");
+            break;
+        }
+
+        case VIEW_CONTROL_MODE:
+        {
+            lcd_printf_line(0, "Modo de Control:");
+            control_mode_t mode = status_get_control_mode();
+            if (mode == MODE_PID) {
+                lcd_printf_line(1, "< PID >");
+            } else {
+                lcd_printf_line(1, "< Estado(LQR) >");
+            }
             break;
         }
 

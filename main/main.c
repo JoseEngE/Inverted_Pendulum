@@ -1,21 +1,23 @@
 // src/main.c
-#include <stdio.h>
-#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <stdio.h>
+#include <string.h>
+
 
 // 1. Inclusión de todas las cabeceras de los módulos
-#include "nvs_flash.h"      // Para la memoria no volátil
-#include "uart_echo.h"      // Para la tarea de comandos UART
-#include "pwm_generator.h"  // Para la tarea de control del motor
-#include "pulse_counter.h"  // Para la tarea de lectura del encoder
-#include "button_handler.h" // Para la tarea de lectura del botón
-#include "pid_controller.h"
-#include "state_space_controller.h"
+#include "bluetooth_telemetry.h" // Módulo Bluetooth
+#include "button_handler.h"      // Para la tarea de lectura del botón
 #include "freertos/queue.h"
 #include "lcd_controller.h" // ¡Solo incluimos nuestro módulo!
+#include "nvs_flash.h"      // Para la memoria no volátil
+#include "pid_controller.h"
+#include "pulse_counter.h" // Para la tarea de lectura del encoder
+#include "pwm_generator.h" // Para la tarea de control del motor
+#include "state_space_controller.h"
 #include "system_status.h"
-#include "bluetooth_telemetry.h" // Módulo Bluetooth
+#include "uart_echo.h" // Para la tarea de comandos UART
+
 
 #define USE_STATE_SPACE_CONTROLLER 1
 
@@ -28,19 +30,19 @@
 
 QueueHandle_t motor_command_queue;
 
-void app_main(void)
-{
+void app_main(void) {
   // Inicialización de NVS (necesario para Bluetooth)
   esp_err_t ret = nvs_flash_init();
-  if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
+  if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
+      ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    ret = nvs_flash_init();
   }
   ESP_ERROR_CHECK(ret);
 
-  pwm_init();           // inicializa y configura pines del driver
-  pulse_counter_init(); // inicializa y configura pines del encoder
-  lcd_init();           // Inicializar la pantalla
+  pwm_init();                 // inicializa y configura pines del driver
+  pulse_counter_init();       // inicializa y configura pines del encoder
+  lcd_init();                 // Inicializar la pantalla
   bluetooth_telemetry_init(); // Inicializar servicio de telemetría Bluetooth
 
   // Mensaje de bienvenida en la pantalla
@@ -51,32 +53,35 @@ void app_main(void)
 
   // Creacion de la cola de tareas
   motor_command_queue = xQueueCreate(1, sizeof(motor_command_t));
-  if (motor_command_queue == NULL)
-  {
+  if (motor_command_queue == NULL) {
     ESP_LOGE("MAIN", "Error al crear la cola del motor.");
     return;
   }
 
-  // --------- Cada tarea se ejecutará de forma independiente y concurrente. ---------
+  // --------- Cada tarea se ejecutará de forma independiente y concurrente.
+  // ---------
 
   // Crear la tarea del controlador (prioridad mas alta)
-  #if USE_STATE_SPACE_CONTROLLER
-  xTaskCreate(state_space_controller_task, "StateSpace", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
-  #else
-  xTaskCreate(pid_controller_task, "PID_Controller", configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
-  #endif
+  xTaskCreate(state_space_controller_task, "StateSpace",
+              configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
+  xTaskCreate(pid_controller_task, "PID_Controller",
+              configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
 
   // Crear la tarea del control del motor
-  xTaskCreate(motor_control_task, "Motor_Control", configMINIMAL_STACK_SIZE * 3, NULL, 4, NULL);
+  xTaskCreate(motor_control_task, "Motor_Control", configMINIMAL_STACK_SIZE * 3,
+              NULL, 4, NULL);
 
   // Tarea para manejar los comandos recibidos por el puerto serie
-  xTaskCreate(uart_echo_task, "uart_echo_task", configMINIMAL_STACK_SIZE * 3, NULL, 3, NULL);
+  xTaskCreate(uart_echo_task, "uart_echo_task", configMINIMAL_STACK_SIZE * 3,
+              NULL, 3, NULL);
 
-  // Tarea que inicializa el PCNT y reporta la posición del encoder para depuración
-  // xTaskCreate(pulse_counter_task, "pulse_counter_task", configMINIMAL_STACK_SIZE * 3, NULL, 5, NULL);
+  // Tarea que inicializa el PCNT y reporta la posición del encoder para
+  // depuración xTaskCreate(pulse_counter_task, "pulse_counter_task",
+  // configMINIMAL_STACK_SIZE * 3, NULL, 5, NULL);
 
   // Tarea que monitorea el botón BOOT y envía comandos de "repetir"
-  xTaskCreate(button_handler_task, "button_handler_task", configMINIMAL_STACK_SIZE * 3, NULL, 4, NULL);
+  xTaskCreate(button_handler_task, "button_handler_task",
+              configMINIMAL_STACK_SIZE * 3, NULL, 4, NULL);
 
   // TAREA DE LA PANTALLA (Prioridad baja, no es crítica)
   xTaskCreate(lcd_display_task, "LCDDisplay", 3072, NULL, 3, NULL);

@@ -223,12 +223,12 @@ void pid_controller_task(void *arg) {
   TickType_t last_wake_time = xTaskGetTickCount();
 
   // Inicializar el controlador PID (Salida en aceleración m/s^2)
-  PID_Init(&g_angle_controller, 37.0f, 308.01f, 0.03f, loop_period_in_seconds,
+  PID_Init(&g_angle_controller, -50.0f, -0.0f, -0.03f, loop_period_in_seconds,
            -2.0f, 2.0f, DEAD_BAND_ANGLE);
 
   // Inicializar el controlador de posición (solo proporcional)
-  PID_Init(&g_position_controller, -0.4f, -0.03f, -0.11f,
-           loop_period_in_seconds, -0.034f, 0.034f, 0.0f);
+  PID_Init(&g_position_controller, 0.4f, 0.03f, 0.11f, loop_period_in_seconds,
+           -0.034f, 0.034f, 0.0f);
 
   // Inicializar el integrador de velocidad (solo I, ganancia 1)
   // Convierte la aceleración m/s^2 a velocidad m/s
@@ -252,7 +252,7 @@ void pid_controller_task(void *arg) {
     // 1. MEDIR estado actual en radianes y la posicón en metros
 
     float current_angle_rad = pulse_counter_get_angle_rad();
-    float current_position_m = pid_get_car_position_m();
+    float current_position_m = -pid_get_car_position_m();
 
     // --- Lógica de control de posición ---
     // El setpoint de posición se establece mediante pid_set_position_setpoint_m
@@ -276,7 +276,7 @@ void pid_controller_task(void *arg) {
     float velocity = PID_Compute(&g_velocity_integrator, acceleration, 0.0f);
 
     // 6. ACTUAR: Establecer la velocidad del motor
-    set_motor_velocity(velocity);
+    set_motor_velocity(-velocity);
   }
 }
 
@@ -316,7 +316,7 @@ float PID_Compute(PIDController *pid, float objetivo, float medicion_actual) {
   float D = pid->kd * (error - pid->ultimo_error) / pid->dt;
 
   // Cálculo temporal de la integral
-  float nueva_integral = pid->integral + (error / 2 * pid->dt);
+  float nueva_integral = pid->integral + (error * pid->dt);
   float I = pid->ki * nueva_integral;
 
   float salida_total = P + I + D;
