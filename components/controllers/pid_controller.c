@@ -107,6 +107,10 @@ static volatile float g_position_setpoint_m = 0.0f;
 static volatile float g_current_dynamic_angle_setpoint = 0.0f;
 static volatile float g_current_velocity = 0.0f;
 
+// Variables de telemetría ampliada
+static volatile float g_current_acceleration = 0.0f;   // Acción de control del PID de ángulo (m/s²)
+static volatile float g_current_angular_velocity = 0.0f; // Velocidad angular estimada numéricamente (rad/s)
+
 // --- Variable para la posición del carro ---
 volatile int32_t g_car_position_pulses = 0; // pwm_generator puede actualizarla
 
@@ -189,6 +193,8 @@ float pid_get_dynamic_angle_setpoint_rad(void) {
   return g_current_dynamic_angle_setpoint;
 }
 float pid_get_velocity(void) { return g_current_velocity; }
+float pid_get_acceleration(void)    { return g_current_acceleration; }
+float pid_get_angular_velocity(void){ return g_current_angular_velocity; }
 
 // --- AÑADIDO: Implementación de la función de deshabilitación forzada ---
 void pid_force_disable(void) {
@@ -273,6 +279,17 @@ void pid_controller_task(void *arg) {
 
     // Integrador: convierte aceleración a velocidad (PID con solo Ki=1)
     float velocity = PID_Compute(&g_velocity_integrator, acceleration, 0.0f);
+
+    // Velocidad angular numérica (diferencia finita en cada ciclo)
+    static float s_prev_angle_rad = 0.0f;
+    float angular_velocity = (current_angle_rad - s_prev_angle_rad) / (PID_LOOP_PERIOD_MS / 1000.0f);
+    s_prev_angle_rad = current_angle_rad;
+
+    // Guardar para telemetría
+    g_current_acceleration    = acceleration;
+    g_current_velocity         = velocity;
+    g_current_angular_velocity = angular_velocity;
+    g_current_dynamic_angle_setpoint = dynamic_angle_setpoint_rad;
 
     // 6. ACTUAR: Establecer la velocidad del motor
     set_motor_velocity(-velocity);

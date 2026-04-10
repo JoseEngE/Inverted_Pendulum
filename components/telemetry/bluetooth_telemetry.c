@@ -210,12 +210,13 @@ static void bluetooth_telemetry_task(void *arg) {
           }
         } else {
           // tiempo_ms, angulo, posicion, accion_control, velocidad, velocidad_angular
-          float theta = pulse_counter_get_angle_rad();
-          float x_pos = pid_get_car_position_m();
-          float vel = pid_get_velocity();
-          float u_ctrl = vel; // In cascade PID, velocity is the controller effort
-          float theta_dot = 0.0; // PID simple doesn't track angular velocity
-          
+          // tiempo_ms, angulo, posicion, accion_control(acel), velocidad_carro, velocidad_angular
+          float theta     = pulse_counter_get_angle_rad();
+          float x_pos     = pid_get_car_position_m();
+          float u_ctrl    = pid_get_acceleration();      // salida del PID de ángulo (m/s²)
+          float vel       = pid_get_velocity();           // velocidad del carro (m/s)
+          float theta_dot = pid_get_angular_velocity();  // velocidad angular (rad/s)
+
           int len = snprintf(packet, sizeof(packet), "%llu,%.4f,%.4f,%.4f,%.4f,%.4f\r\n",
                              time_ms, theta, x_pos, u_ctrl, vel, theta_dot);
           if (len > 0) {

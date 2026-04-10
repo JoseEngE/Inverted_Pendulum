@@ -16,7 +16,7 @@
 #include "pwm_generator.h" // Para la tarea de control del motor
 #include "state_space_controller.h"
 #include "system_status.h"
-#include "uart_echo.h" // Para la tarea de comandos UART
+#include "simulink_comms.h" // Telemetría binaria hacia Simulink por UART0
 
 
 #define USE_STATE_SPACE_CONTROLLER 1
@@ -71,9 +71,11 @@ void app_main(void) {
   xTaskCreate(motor_control_task, "Motor_Control", configMINIMAL_STACK_SIZE * 3,
               NULL, 4, NULL);
 
-  // Tarea para manejar los comandos recibidos por el puerto serie
-  xTaskCreate(uart_echo_task, "uart_echo_task", configMINIMAL_STACK_SIZE * 3,
-              NULL, 3, NULL);
+  // Inicializar telemetría Simulink (UART0, 115200 baud, 6 variables TX, 0 RX)
+  // NOTA: Los logs de ESP_LOG están desactivados para mantener el stream binario limpio.
+  simulink_comms_init(UART_NUM_0, 115200, 6, 0);
+  simulink_comms_start_tasks(3, tskNO_AFFINITY, 10); // Prioridad 3, 10ms por paquete (100 Hz)
+
 
   // Tarea que inicializa el PCNT y reporta la posición del encoder para
   // depuración xTaskCreate(pulse_counter_task, "pulse_counter_task",
