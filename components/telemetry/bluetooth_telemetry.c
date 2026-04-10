@@ -196,27 +196,28 @@ static void bluetooth_telemetry_task(void *arg) {
 
       if (telemetry_enabled) {
         if (ss_is_enabled()) {
-          // Formato CSV solicitado para Espacio de Estados:
-          // tiempo_ms, posicion, velocidad, angulo, velocidad_angular, salida_control, velocidad_control, estado_integrador
-          float x_pos = ss_get_x_pos();
-          float x_dot = ss_get_x_dot();
+          // tiempo_ms, angulo, posicion, accion_control, velocidad, velocidad_angular
           float theta = ss_get_theta();
+          float x_pos = ss_get_x_pos();
+          float u_ctrl = ss_get_u_control(); // Control Action
+          float x_dot = ss_get_x_dot();
           float theta_dot = ss_get_theta_dot_hat();
-          float u_ctrl = ss_get_u_control();
-          float est_int = ss_get_estado_integrador();
-          // x_dot y vel_control son la misma variable matematicamente en el loop actual
           
-          int len = snprintf(packet, sizeof(packet), "%llu,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\r\n",
-                             time_ms, x_pos, x_dot, theta, theta_dot, u_ctrl, x_dot, est_int);
+          int len = snprintf(packet, sizeof(packet), "%llu,%.4f,%.4f,%.4f,%.4f,%.4f\r\n",
+                             time_ms, theta, x_pos, u_ctrl, x_dot, theta_dot);
           if (len > 0) {
             esp_spp_write(spp_handle, len, (uint8_t *)packet);
           }
         } else {
-          // Formato CSV clásico para PID o inactivo:
-          // tiempo_ms, posicion_real, angulo_real
-          float pos_m = pid_get_car_position_m();
-          float angle_rad = pulse_counter_get_angle_rad();
-          int len = snprintf(packet, sizeof(packet), "%llu,%.4f,%.4f\r\n", time_ms, pos_m, angle_rad);
+          // tiempo_ms, angulo, posicion, accion_control, velocidad, velocidad_angular
+          float theta = pulse_counter_get_angle_rad();
+          float x_pos = pid_get_car_position_m();
+          float vel = pid_get_velocity();
+          float u_ctrl = vel; // In cascade PID, velocity is the controller effort
+          float theta_dot = 0.0; // PID simple doesn't track angular velocity
+          
+          int len = snprintf(packet, sizeof(packet), "%llu,%.4f,%.4f,%.4f,%.4f,%.4f\r\n",
+                             time_ms, theta, x_pos, u_ctrl, vel, theta_dot);
           if (len > 0) {
             esp_spp_write(spp_handle, len, (uint8_t *)packet);
           }

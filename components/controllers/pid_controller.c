@@ -6,7 +6,6 @@
 #include "freertos/task.h"
 #include "pulse_counter.h" // Para leer la posición del encoder
 #include "pwm_generator.h" // Para la función que mueve el motor
-#include "uart_echo.h"
 #include <math.h> // Para la función de valor absoluto fabs()
 #include <stdint.h>
 #include <stdio.h>

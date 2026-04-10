@@ -5,8 +5,6 @@
 #include "freertos/task.h"
 #include "driver/ledc.h" // Módulo LEDC para PWM
 #include "esp_log.h"
-#include "uart_echo.h" // Para incluir la estructura pwm_command_t y la cola
-//#include "pwm_generator.h"
 
 // Definiciones para el PWM
 #define LEDC_TIMER              LEDC_TIMER_0

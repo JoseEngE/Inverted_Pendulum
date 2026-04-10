@@ -10,7 +10,6 @@
 #include "pulse_counter.h"
 #include "pwm_generator.h"
 #include "system_status.h" // Para manejar el estado del movimiento manual
-#include "uart_echo.h" // Incluimos para acceder a la cola y la estructura de comando
 #include "state_space_controller.h" // AÑADIDO: LQR state space
 #include <stdio.h>
 
