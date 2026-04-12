@@ -37,9 +37,20 @@ typedef enum
     VIEW_POSITION, // Vista secundaria: Posición del carro en cm
     VIEW_PID_GAINS,      // Vista terciaria: Valores de las ganancias Kp, Ki, Kd
     VIEW_VELOCITY,       // Cuarta vista: Velocidad
+    VIEW_CONTROL_MODE,   // Quinta vista: Selección de modo de control (PID/LQR)
     VIEW_COUNT,           // ¡Importante! Siempre al final, para saber cuántas vistas hay
     VIEW_CALIBRATION //++
 } lcd_view_state_t;
+
+// --- AÑADIDO: ESTADO DEL MODO DE CONTROL ---
+typedef enum
+{
+    MODE_PID,
+    MODE_STATE_SPACE
+} control_mode_t;
+
+void status_set_control_mode(control_mode_t mode);
+control_mode_t status_get_control_mode(void);
 
 // --- AÑADIDO: ESTADO DE SELECCIÓN DE PARÁMETROS PID ---
 typedef enum

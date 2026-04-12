@@ -6,7 +6,6 @@
 #include "freertos/task.h"
 #include "pulse_counter.h" // Para leer la posición del encoder
 #include "pwm_generator.h" // Para la función que mueve el motor
-#include "uart_echo.h"
 #include <math.h> // Para la función de valor absoluto fabs()
 #include <stdint.h>
 #include <stdio.h>
@@ -108,6 +107,10 @@ static volatile float g_position_setpoint_m = 0.0f;
 static volatile float g_current_dynamic_angle_setpoint = 0.0f;
 static volatile float g_current_velocity = 0.0f;
 
+// Variables de telemetría ampliada
+static volatile float g_current_acceleration = 0.0f;   // Acción de control del PID de ángulo (m/s²)
+static volatile float g_current_angular_velocity = 0.0f; // Velocidad angular estimada numéricamente (rad/s)
+
 // --- Variable para la posición del carro ---
 volatile int32_t g_car_position_pulses = 0; // pwm_generator puede actualizarla
 
@@ -190,6 +193,8 @@ float pid_get_dynamic_angle_setpoint_rad(void) {
   return g_current_dynamic_angle_setpoint;
 }
 float pid_get_velocity(void) { return g_current_velocity; }
+float pid_get_acceleration(void)    { return g_current_acceleration; }
+float pid_get_angular_velocity(void){ return g_current_angular_velocity; }
 
 // --- AÑADIDO: Implementación de la función de deshabilitación forzada ---
 void pid_force_disable(void) {
@@ -223,12 +228,12 @@ void pid_controller_task(void *arg) {
   TickType_t last_wake_time = xTaskGetTickCount();
 
   // Inicializar el controlador PID (Salida en aceleración m/s^2)
-  PID_Init(&g_angle_controller, 37.0f, 308.01f, 0.03f, loop_period_in_seconds,
+  PID_Init(&g_angle_controller, -50.0f, -0.0f, -0.03f, loop_period_in_seconds,
            -2.0f, 2.0f, DEAD_BAND_ANGLE);
 
   // Inicializar el controlador de posición (solo proporcional)
-  PID_Init(&g_position_controller, -0.4f, -0.03f, -0.11f,
-           loop_period_in_seconds, -0.034f, 0.034f, 0.0f);
+  PID_Init(&g_position_controller, 0.4f, 0.03f, 0.11f, loop_period_in_seconds,
+           -0.034f, 0.034f, 0.0f);
 
   // Inicializar el integrador de velocidad (solo I, ganancia 1)
   // Convierte la aceleración m/s^2 a velocidad m/s
@@ -252,7 +257,7 @@ void pid_controller_task(void *arg) {
     // 1. MEDIR estado actual en radianes y la posicón en metros
 
     float current_angle_rad = pulse_counter_get_angle_rad();
-    float current_position_m = pid_get_car_position_m();
+    float current_position_m = -pid_get_car_position_m();
 
     // --- Lógica de control de posición ---
     // El setpoint de posición se establece mediante pid_set_position_setpoint_m
@@ -275,8 +280,19 @@ void pid_controller_task(void *arg) {
     // Integrador: convierte aceleración a velocidad (PID con solo Ki=1)
     float velocity = PID_Compute(&g_velocity_integrator, acceleration, 0.0f);
 
+    // Velocidad angular numérica (diferencia finita en cada ciclo)
+    static float s_prev_angle_rad = 0.0f;
+    float angular_velocity = (current_angle_rad - s_prev_angle_rad) / (PID_LOOP_PERIOD_MS / 1000.0f);
+    s_prev_angle_rad = current_angle_rad;
+
+    // Guardar para telemetría
+    g_current_acceleration    = acceleration;
+    g_current_velocity         = velocity;
+    g_current_angular_velocity = angular_velocity;
+    g_current_dynamic_angle_setpoint = dynamic_angle_setpoint_rad;
+
     // 6. ACTUAR: Establecer la velocidad del motor
-    set_motor_velocity(velocity);
+    set_motor_velocity(-velocity);
   }
 }
 
@@ -316,7 +332,7 @@ float PID_Compute(PIDController *pid, float objetivo, float medicion_actual) {
   float D = pid->kd * (error - pid->ultimo_error) / pid->dt;
 
   // Cálculo temporal de la integral
-  float nueva_integral = pid->integral + (error / 2 * pid->dt);
+  float nueva_integral = pid->integral + (error * pid->dt);
   float I = pid->ki * nueva_integral;
 
   float salida_total = P + I + D;

@@ -10,7 +10,7 @@
 #include "pulse_counter.h"
 #include "pwm_generator.h"
 #include "system_status.h" // Para manejar el estado del movimiento manual
-#include "uart_echo.h" // Incluimos para acceder a la cola y la estructura de comando
+#include "state_space_controller.h" // AÑADIDO: LQR state space
 #include <stdio.h>
 
 // --- PINES DE LOS BOTONES ---
@@ -115,6 +115,7 @@ void button_handler_task(void *arg) {
       if (gpio_get_level(EMERGENCY_STOP_GPIO_RIGHT) == 0) {
         // Llama a la función que solo deshabilita
         pid_force_disable();
+        ss_force_disable(); // Detener ambos siempre
       }
       // vTaskDelay(pdMS_TO_TICKS(50)); // Debounce
     }
@@ -127,6 +128,7 @@ void button_handler_task(void *arg) {
       if (gpio_get_level(EMERGENCY_STOP_GPIO_LEFT) == 0) {
         // Llama a la función que solo deshabilita
         pid_force_disable();
+        ss_force_disable(); // Detener ambos
       }
     }
     last_stop_button_state = current_stop_button_state_new;
@@ -140,14 +142,19 @@ void button_handler_task(void *arg) {
       if (gpio_get_level(ENABLE_PID_BUTTON_GPIO) == 0 &&
           gpio_get_level(EMERGENCY_STOP_GPIO_LEFT) == 1 &&
           gpio_get_level(EMERGENCY_STOP_GPIO_RIGHT) == 1) {
-        pid_toggle_enable();
+        if(status_get_control_mode() == MODE_PID) {
+            if (ss_is_enabled()) ss_force_disable();
+            pid_toggle_enable();
+        } else {
+            if (pid_is_enabled()) pid_force_disable();
+            ss_toggle_enable();
+        }
       }
     }
     last_button_state = current_button_state;
 
-    // Solo permitimos el movimiento manual si el PID está explícitamente y NO
-    // estamos en la vista de sintonización deshabilitado
-    if (!pid_is_enabled() && status_get_lcd_view() != VIEW_PID_GAINS) {
+    // Solo permitimos el movimiento manual si NO estamos en vista de sintonización o selección de modo, y el control está apagado
+    if (!pid_is_enabled() && !ss_is_enabled() && status_get_lcd_view() != VIEW_PID_GAINS && status_get_lcd_view() != VIEW_CONTROL_MODE) {
 
       // --- LÓGICA DE CALIBRACIÓN (HOMING) ---
       if (is_command_button_pressed(CALIBRATION_BUTTON_GPIO)) {
@@ -300,6 +307,17 @@ void button_handler_task(void *arg) {
             vTaskDelay(pdMS_TO_TICKS(150)); // Delay for continuous tuning
           }
         }
+      } else if (status_get_lcd_view() == VIEW_CONTROL_MODE) {
+        int left_button_state = gpio_get_level(MANUAL_LEFT_BUTTON_GPIO);
+        int right_button_state = gpio_get_level(MANUAL_RIGHT_BUTTON_GPIO);
+
+        if (right_button_state == 0 && left_button_state == 1) {
+          status_set_control_mode(MODE_STATE_SPACE);
+          vTaskDelay(pdMS_TO_TICKS(150));
+        } else if (left_button_state == 0 && right_button_state == 1) {
+          status_set_control_mode(MODE_PID);
+          vTaskDelay(pdMS_TO_TICKS(150));
+        }
       }
     }
 
@@ -308,8 +326,8 @@ void button_handler_task(void *arg) {
 }
 
 void button_handler_start_calibration(void) {
-  if (pid_is_enabled()) {
-    ESP_LOGE(TAG, "No se puede calibrar con el PID habilitado.");
+  if (pid_is_enabled() || ss_is_enabled()) {
+    ESP_LOGE(TAG, "No se puede calibrar con el control habilitado.");
     return;
   }
 

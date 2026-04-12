@@ -16,6 +16,19 @@ manual_move_state_t status_get_manual_move_state(void)
     return g_manual_move_state;
 }
 
+// --- AÑADIDO: Lógica para el Estado de Modo de Control ---
+static volatile control_mode_t g_control_mode = MODE_PID;
+
+void status_set_control_mode(control_mode_t mode)
+{
+    g_control_mode = mode;
+}
+
+control_mode_t status_get_control_mode(void)
+{
+    return g_control_mode;
+}
+
 // --- AÑADIDO: Lógica para el estado de la vista de la pantalla ---
 volatile lcd_view_state_t g_lcd_view_state = VIEW_MAIN_STATUS;
 

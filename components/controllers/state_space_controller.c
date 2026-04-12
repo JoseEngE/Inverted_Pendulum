@@ -1,0 +1,173 @@
+#include "state_space_controller.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "pid_controller.h"
+#include "pulse_counter.h"
+#include "pwm_generator.h"
+#include <math.h>
+#include <stdbool.h>
+
+static const char *TAG = "STATE_SPACE_CTRL";
+
+#define SS_LOOP_PERIOD_MS 10
+#define DT (SS_LOOP_PERIOD_MS / 1000.0f)
+
+// ==============================================================================
+// 1. CONSTANTES DE CONTROL Y MATRICES (Valores de MATLAB)
+// ==============================================================================
+
+// --- CONSTANTES DEL OBSERVADOR DE ORDEN REDUCIDO ---
+static const float F_obs = 0.500000f;
+static const float G_obs = -24.3800797f;
+static const float H_obs = -0.17233f;
+// static const float L_obs = 50.4718f;
+
+// // --- GANANCIAS DEL SERVOSISTEMA (LQI) ---
+static const float K_x = -8.320f;
+static const float K_xdot = -6.70f;
+static const float K_theta = -19.09f;
+static const float K_w = -2.7f;
+static const float K_i = -4.7f;
+
+// ==============================================================================
+// 2. VARIABLES GLOBALES DE ESTADO
+// ==============================================================================
+
+static volatile bool g_ss_enabled = false;
+
+static float g_x_pos = 0.0f;
+static float g_x_dot = 0.0f; // Velocidad del carro
+static float g_theta = 0.0f;
+
+static float g_theta_dot_hat = 0.0f;     // Velocidad angular estimada
+static float g_Z_estado = 0.0f;          // Dinámica interna del filtro
+static float g_estado_integrador = 0.0f; // Acumulador del error (X_i)
+static PIDController g_ss_integrator;    // Utilizado para la integración LQI
+static PIDController
+    g_ss_accel_integrator; // Integrador de Aceleración a Velocidad
+static PIDController g_ss_vel_integrator; // Integrador de Velocidad a Posición
+
+static float g_u_control = 0.0f;
+static float g_ref_posicion =
+    0.10f; // Inicialmente como en arduino (18cm del origen)
+
+// ==============================================================================
+// 3. FUNCIONES DE MANEJO DE ESTADOS Y TAREAS
+// ==============================================================================
+
+void SS_Reset(void) {
+  g_Z_estado = 0.0f;
+  g_estado_integrador = 0.0f;
+  float g_prev_x_pos = pid_get_car_position_m();
+  PID_Reset(&g_ss_integrator);
+  PID_Reset(&g_ss_accel_integrator);
+  PID_Reset(&g_ss_vel_integrator);
+}
+
+void SS_UpdateReference(float x_ref, float theta_ref) {
+  g_ref_posicion = x_ref;
+}
+
+void ss_toggle_enable(void) {
+  g_ss_enabled = !g_ss_enabled;
+  if (g_ss_enabled) {
+    SS_Reset();
+    ESP_LOGW(TAG, "State Space Control ENABLED");
+  } else {
+    set_motor_velocity(0.0f);
+    ESP_LOGW(TAG, "State Space Control DISABLED");
+  }
+}
+
+void ss_force_disable(void) {
+  if (g_ss_enabled) {
+    g_ss_enabled = false;
+    SS_Reset();
+    set_motor_velocity(0.0f);
+    ESP_LOGE(TAG, "EMERGENCY STOP!");
+  }
+}
+
+bool ss_is_enabled(void) { return g_ss_enabled; }
+
+float ss_get_x_pos(void) { return g_x_pos; }
+float ss_get_x_dot(void) { return g_x_dot; }
+float ss_get_theta(void) { return g_theta; }
+float ss_get_theta_dot_hat(void) { return g_theta_dot_hat; }
+float ss_get_u_control(void) { return g_u_control; }
+float ss_get_estado_integrador(void) { return g_estado_integrador; }
+
+// ==============================================================================
+// 4. RUTINA DE INTERRUPCIÓN DE CONTROL (Implementada como FreeRTOS Task)
+// ==============================================================================
+
+void state_space_controller_task(void *arg) {
+  (void)arg;
+  TickType_t last_wake_time = xTaskGetTickCount();
+
+  ESP_LOGI(TAG, "State Space Controller initialized (LQI + Red. Obs.)");
+
+  // Inicializar integrador del LQI (Kp=0, Ki=1, Kd=0, límites [-2.0, 2.0])
+  PID_Init(&g_ss_integrator, 0.0f, 1.0f, 0.0f, DT, -2.0f, 2.0f, 0.0f);
+
+  // Inicializar integradores cinemáticos
+  PID_Init(&g_ss_accel_integrator, 0.0f, 1.0f, 0.0f, DT, -0.66f, 0.66f, 0.0f);
+  PID_Init(&g_ss_vel_integrator, 0.0f, 1.0f, 0.0f, DT, -2.0f, 2.0f, 0.0f);
+
+  ss_toggle_enable();
+  ss_toggle_enable(); // Ciclo para forzar estado inicial limpio
+                      // static float pos_control = 0.0f;
+  static float vel_control = 0.0f;
+  static float pos_control = 0.0f;
+  static float g_theta_dot = 0.0f;
+
+  while (1) {
+    vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(SS_LOOP_PERIOD_MS));
+
+    if (!g_ss_enabled) {
+      SS_Reset();
+      continue;
+    }
+
+    // --- PASO 1: LEER SENSORES ---
+    g_theta_dot = (pulse_counter_get_angle_rad() - 3.14159265f - g_theta) / DT;
+    g_theta = pulse_counter_get_angle_rad() - 3.14159265f;
+    g_x_pos = -pid_get_car_position_m();
+    // Estimación numérica de la velocidad del carro (x_dot)
+    g_x_dot = vel_control;
+
+    // --- PASO 2: DINÁMICA DEL ERROR (Integrador) ---
+    g_estado_integrador =
+        PID_Compute(&g_ss_integrator, g_ref_posicion, g_x_pos);
+
+    float dynamic_angle_setpoint = g_estado_integrador;
+
+    // --- PASO 3: ESTIMACIÓN (Observador Reducido Actual) ---
+    // g_theta_dot_hat = g_Z_estado + (L_obs * g_theta);
+    g_theta_dot_hat = g_theta_dot;
+
+    // --- PASO 4: LEY DE CONTROL (LQI) ---
+    g_u_control = -((K_x * g_x_pos) + (K_xdot * g_x_dot) + (K_theta * g_theta) +
+                    (K_w * g_theta_dot_hat) + (K_i * dynamic_angle_setpoint));
+
+    if (g_u_control > 10000.0f)
+      g_u_control = 10000.0f;
+    if (g_u_control < -10000.0f)
+      g_u_control = -10000.0f;
+
+    // --- PASO 5: INTEGRACIONES CINEMÁTICAS ---
+    // U es aceleración. Integramos 1 vez para sacar la Velocidad
+    vel_control = PID_Compute(&g_ss_accel_integrator, g_u_control, 0.0f);
+    // Integramos la velocidad resultante para sacar Posición
+    pos_control = PID_Compute(&g_ss_vel_integrator, vel_control, 0.0f);
+
+    // // --- PASO 6: ¡ACCIONAR MOTOR! ---
+    // Puesto que el motor se comanda en Velocidad, enviamos la 1ra integral
+    set_motor_velocity(-vel_control);
+
+    // // --- PASO 7: PREDECIR SIGUIENTE ESTADO INTERNO ---
+    g_Z_estado =
+        (F_obs * g_Z_estado) + (G_obs * g_theta) + (H_obs * g_u_control);
+  }
+}
