@@ -201,7 +201,7 @@ void state_space_controller_task(void *arg) {
 
   // Integrador LQI: integra el error de posición  x_i[k+1] = x_i[k] + (r-x)·Ts
   // Kp=0, Ki=1, Kd=0 → salida = Σ(error)·DT, saturada en ±2 m·s
-  PID_Init(&g_ss_integrator, 0.0f, 1.0f, 0.0f, DT, -0.1f, 0.1f, 0.0f);
+  PID_Init(&g_ss_integrator, 0.0f, 1.0f, 0.0f, DT, -0.01f, 0.01f, 0.0f);
 
   ESP_LOGI(
       TAG,
