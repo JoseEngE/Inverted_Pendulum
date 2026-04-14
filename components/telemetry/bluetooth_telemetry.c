@@ -21,7 +21,7 @@
 #include "pid_controller.h"
 #include "pulse_counter.h"
 #include "state_space_controller.h"
-
+#include "state_space_reducido.h"
 
 #define SPP_SERVER_NAME "SPP_SERVER"
 #define CONFIG_BT_DEVICE_NAME "Pendulo_Invertido"
@@ -202,6 +202,19 @@ static void bluetooth_telemetry_task(void *arg) {
           float u_ctrl = ss_get_u_control(); // Control Action
           float x_dot = ss_get_x_dot();
           float theta_dot = ss_get_theta_dot_hat();
+          
+          int len = snprintf(packet, sizeof(packet), "%llu,%.4f,%.4f,%.4f,%.4f,%.4f\r\n",
+                             time_ms, theta, x_pos, u_ctrl, x_dot, theta_dot);
+          if (len > 0) {
+            esp_spp_write(spp_handle, len, (uint8_t *)packet);
+          }
+        } else if (ss_red_is_enabled()) {
+          // tiempo_ms, angulo, posicion, accion_control, velocidad, velocidad_angular
+          float theta = ss_red_get_theta();
+          float x_pos = ss_red_get_x_pos();
+          float u_ctrl = ss_red_get_u_control(); // Control Action
+          float x_dot = ss_red_get_x_dot();
+          float theta_dot = ss_red_get_theta_dot_hat();
           
           int len = snprintf(packet, sizeof(packet), "%llu,%.4f,%.4f,%.4f,%.4f,%.4f\r\n",
                              time_ms, theta, x_pos, u_ctrl, x_dot, theta_dot);

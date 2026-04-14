@@ -11,6 +11,7 @@
 #include "pwm_generator.h"
 #include "system_status.h" // Para manejar el estado del movimiento manual
 #include "state_space_controller.h" // AÑADIDO: LQR state space
+#include "state_space_reducido.h" // AÑADIDO: LQR Reducido
 #include <stdio.h>
 
 // --- PINES DE LOS BOTONES ---
@@ -116,6 +117,7 @@ void button_handler_task(void *arg) {
         // Llama a la función que solo deshabilita
         pid_force_disable();
         ss_force_disable(); // Detener ambos siempre
+        ss_red_force_disable();
       }
       // vTaskDelay(pdMS_TO_TICKS(50)); // Debounce
     }
@@ -129,6 +131,7 @@ void button_handler_task(void *arg) {
         // Llama a la función que solo deshabilita
         pid_force_disable();
         ss_force_disable(); // Detener ambos
+        ss_red_force_disable();
       }
     }
     last_stop_button_state = current_stop_button_state_new;
@@ -144,17 +147,23 @@ void button_handler_task(void *arg) {
           gpio_get_level(EMERGENCY_STOP_GPIO_RIGHT) == 1) {
         if(status_get_control_mode() == MODE_PID) {
             if (ss_is_enabled()) ss_force_disable();
+            if (ss_red_is_enabled()) ss_red_force_disable();
             pid_toggle_enable();
+        } else if(status_get_control_mode() == MODE_STATE_SPACE) {
+            if (pid_is_enabled()) pid_force_disable();
+            if (ss_red_is_enabled()) ss_red_force_disable();
+            ss_toggle_enable();
         } else {
             if (pid_is_enabled()) pid_force_disable();
-            ss_toggle_enable();
+            if (ss_is_enabled()) ss_force_disable();
+            ss_red_toggle_enable();
         }
       }
     }
     last_button_state = current_button_state;
 
     // Solo permitimos el movimiento manual si NO estamos en vista de sintonización o selección de modo, y el control está apagado
-    if (!pid_is_enabled() && !ss_is_enabled() && status_get_lcd_view() != VIEW_PID_GAINS && status_get_lcd_view() != VIEW_CONTROL_MODE) {
+    if (!pid_is_enabled() && !ss_is_enabled() && !ss_red_is_enabled() && status_get_lcd_view() != VIEW_PID_GAINS && status_get_lcd_view() != VIEW_CONTROL_MODE) {
 
       // --- LÓGICA DE CALIBRACIÓN (HOMING) ---
       if (is_command_button_pressed(CALIBRATION_BUTTON_GPIO)) {
@@ -312,10 +321,14 @@ void button_handler_task(void *arg) {
         int right_button_state = gpio_get_level(MANUAL_RIGHT_BUTTON_GPIO);
 
         if (right_button_state == 0 && left_button_state == 1) {
-          status_set_control_mode(MODE_STATE_SPACE);
+          int next_mode = (int)status_get_control_mode() + 1;
+          if (next_mode > 2) next_mode = 0;
+          status_set_control_mode((control_mode_t)next_mode);
           vTaskDelay(pdMS_TO_TICKS(150));
         } else if (left_button_state == 0 && right_button_state == 1) {
-          status_set_control_mode(MODE_PID);
+          int prev_mode = (int)status_get_control_mode() - 1;
+          if (prev_mode < 0) prev_mode = 2;
+          status_set_control_mode((control_mode_t)prev_mode);
           vTaskDelay(pdMS_TO_TICKS(150));
         }
       }
@@ -326,7 +339,7 @@ void button_handler_task(void *arg) {
 }
 
 void button_handler_start_calibration(void) {
-  if (pid_is_enabled() || ss_is_enabled()) {
+  if (pid_is_enabled() || ss_is_enabled() || ss_red_is_enabled()) {
     ESP_LOGE(TAG, "No se puede calibrar con el control habilitado.");
     return;
   }

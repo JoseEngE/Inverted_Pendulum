@@ -15,9 +15,9 @@
 #include "pulse_counter.h" // Para la tarea de lectura del encoder
 #include "pwm_generator.h" // Para la tarea de control del motor
 #include "state_space_controller.h"
+#include "state_space_reducido.h"
 #include "system_status.h"
 #include "simulink_comms.h" // Telemetría binaria hacia Simulink por UART0
-
 
 #define USE_STATE_SPACE_CONTROLLER 1
 
@@ -63,6 +63,8 @@ void app_main(void) {
 
   // Crear la tarea del controlador (prioridad mas alta)
   xTaskCreate(state_space_controller_task, "StateSpace",
+              configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
+  xTaskCreate(state_space_reducido_task, "StateSpaceRed",
               configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
   xTaskCreate(pid_controller_task, "PID_Controller",
               configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
