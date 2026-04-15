@@ -48,7 +48,8 @@ typedef enum
 {
     MODE_PID,
     MODE_STATE_SPACE,
-    MODE_STATE_SPACE_RED
+    MODE_STATE_SPACE_RED,
+    MODE_STATE_SPACE_FUNC
 } control_mode_t;
 
 void status_set_control_mode(control_mode_t mode);

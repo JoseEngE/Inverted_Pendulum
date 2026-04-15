@@ -16,6 +16,7 @@
 #include "simulink_comms.h" // Telemetría binaria hacia Simulink por UART0
 #include "state_space_controller.h"
 #include "state_space_reducido.h"
+#include "state_space_funcional.h"
 #include "system_status.h"
 
 
@@ -43,7 +44,7 @@ void app_main(void) {
   pwm_init();           // inicializa y configura pines del driver
   pulse_counter_init(); // inicializa y configura pines del encoder
   lcd_init();           // Inicializar la pantalla
-  bluetooth_telemetry_init(); // Inicializar servicio de telemetría Bluetooth
+  // bluetooth_telemetry_init(); // Inicializar servicio de telemetría Bluetooth
 
   // Mensaje de bienvenida en la pantalla
   lcd_clear();
@@ -65,6 +66,8 @@ void app_main(void) {
   xTaskCreate(state_space_controller_task, "StateSpace",
               configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
   xTaskCreate(state_space_reducido_task, "StateSpaceRed",
+              configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
+  xTaskCreate(state_space_funcional_task, "StateSpaceFunc",
               configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);
   xTaskCreate(pid_controller_task, "PID_Controller",
               configMINIMAL_STACK_SIZE * 4, NULL, 5, NULL);

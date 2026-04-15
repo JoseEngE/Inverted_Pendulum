@@ -12,6 +12,7 @@
 #include "system_status.h" // Para manejar el estado del movimiento manual
 #include "state_space_controller.h" // AÑADIDO: LQR state space
 #include "state_space_reducido.h" // AÑADIDO: LQR Reducido
+#include "state_space_funcional.h" // AÑADIDO: LQR Funcional
 #include <stdio.h>
 
 // --- PINES DE LOS BOTONES ---
@@ -121,6 +122,7 @@ void button_handler_task(void *arg) {
         pid_force_disable();
         ss_force_disable(); // Detener ambos siempre
         ss_red_force_disable();
+        ss_func_force_disable();
 
         // Re-homing dinámico: Si conocemos el centro, recalibramos en el límite negativo (-travel_range/2)
         if (g_calibrated_travel_range_pulses > 0) {
@@ -141,6 +143,7 @@ void button_handler_task(void *arg) {
         pid_force_disable();
         ss_force_disable(); // Detener ambos
         ss_red_force_disable();
+        ss_func_force_disable();
 
         // Re-homing dinámico: Si conocemos el centro, recalibramos en el límite positivo (+travel_range/2)
         if (g_calibrated_travel_range_pulses > 0) {
@@ -163,15 +166,23 @@ void button_handler_task(void *arg) {
         if(status_get_control_mode() == MODE_PID) {
             if (ss_is_enabled()) ss_force_disable();
             if (ss_red_is_enabled()) ss_red_force_disable();
+            if (ss_func_is_enabled()) ss_func_force_disable();
             pid_toggle_enable();
         } else if(status_get_control_mode() == MODE_STATE_SPACE) {
             if (pid_is_enabled()) pid_force_disable();
             if (ss_red_is_enabled()) ss_red_force_disable();
+            if (ss_func_is_enabled()) ss_func_force_disable();
             ss_toggle_enable();
+        } else if(status_get_control_mode() == MODE_STATE_SPACE_RED) {
+            if (pid_is_enabled()) pid_force_disable();
+            if (ss_is_enabled()) ss_force_disable();
+            if (ss_func_is_enabled()) ss_func_force_disable();
+            ss_red_toggle_enable();
         } else {
             if (pid_is_enabled()) pid_force_disable();
             if (ss_is_enabled()) ss_force_disable();
-            ss_red_toggle_enable();
+            if (ss_red_is_enabled()) ss_red_force_disable();
+            ss_func_toggle_enable();
         }
       }
     }
@@ -337,12 +348,12 @@ void button_handler_task(void *arg) {
 
         if (right_button_state == 0 && left_button_state == 1) {
           int next_mode = (int)status_get_control_mode() + 1;
-          if (next_mode > 2) next_mode = 0;
+          if (next_mode > 3) next_mode = 0;
           status_set_control_mode((control_mode_t)next_mode);
           vTaskDelay(pdMS_TO_TICKS(150));
         } else if (left_button_state == 0 && right_button_state == 1) {
           int prev_mode = (int)status_get_control_mode() - 1;
-          if (prev_mode < 0) prev_mode = 2;
+          if (prev_mode < 0) prev_mode = 3;
           status_set_control_mode((control_mode_t)prev_mode);
           vTaskDelay(pdMS_TO_TICKS(150));
         }
@@ -364,7 +375,7 @@ void button_handler_task(void *arg) {
 }
 
 void button_handler_start_calibration(void) {
-  if (pid_is_enabled() || ss_is_enabled() || ss_red_is_enabled()) {
+  if (pid_is_enabled() || ss_is_enabled() || ss_red_is_enabled() || ss_func_is_enabled()) {
     ESP_LOGE(TAG, "No se puede calibrar con el control habilitado.");
     return;
   }
