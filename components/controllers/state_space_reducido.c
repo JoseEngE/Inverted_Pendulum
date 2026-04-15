@@ -55,8 +55,8 @@ typedef struct {
  */
 static const RED_Params params_long = {
     .F_obs = 0.6018f,
-    .G_obs = -0.0600f,
-    .H_obs = -15.6319f,
+    .H_obs = -0.0600f,
+    .G_obs = -15.6319f,
     .L_obs = 40.0f,
     .K_x = -8.3f,
     .K_xdot = -11.27f,
@@ -66,14 +66,14 @@ static const RED_Params params_long = {
 
 // Placeholder: Duplicado para la vara corta (ajustar tras cálculo en MATLAB)
 static const RED_Params params_short = {
-    .F_obs = 0.6018f,
-    .G_obs = -0.0600f,
-    .H_obs = -15.6319f,
-    .L_obs = 40.0f,
-    .K_x = -6.56f,
-    .K_xdot = -8.55f,
-    .K_theta = -30.8f,
-    .K_w = -2.9708f,
+    .F_obs = 0.5000f,
+    .G_obs = -24.387f,
+    .H_obs = -0.17f,
+    .L_obs = 50.43f,
+    .K_x = -13.86f,
+    .K_xdot = -11.04f,
+    .K_theta = -28.86f,
+    .K_w = -4.388f,
     .K_i = -1.0f};
 
 // =============================================================================
@@ -97,7 +97,7 @@ static float g_estado_integrador = 0.0f;
 static float g_u_prev = 0.0f;
 static float g_theta_prev = 0.0f;
 static float g_vel_cmd = 0.0f;
-static float g_ref_posicion = -0.2f;
+static float g_ref_posicion = 0.2f;
 
 static PIDController g_ss_red_integrator;
 
@@ -154,7 +154,7 @@ float ss_red_get_estado_integrador(void) { return g_estado_integrador; }
 static void reduced_observer_update(const RED_Params *p, float theta_meas, float u_prev, float theta_prev) {
     // Predicción del estado interno z
     // z[k] = F*z[k-1] + G*u[k-1] + H*theta[k-1]
-    g_z_obs = (p->F_obs * g_z_obs) + (p->G_obs * u_prev) + (p->H_obs * theta_prev);
+    g_z_obs = (p->F_obs * g_z_obs) + (p->H_obs * u_prev) + (p->G_obs * theta_prev);
     
     // Estimación de la velocidad angular
     // theta_dot_hat[k] = z[k] + L*theta_meas[k]
