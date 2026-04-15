@@ -55,46 +55,44 @@ typedef struct {
 } LQR_Params;
 
 static const LQR_Params params_long = {
-  .Ad = {{1.0000f, 0.0100f, 0.0000f, 0.0000f},
-         {0.0000f, 1.0000f, 0.0000f, 0.0000f},
-         {0.0000f, 0.0000f, 1.0018f, 0.0100f},
-         {0.0000f, 0.0000f, 0.3681f, 1.0018f}},
-  .Bd = {0.000051f, 0.0100f, -0.000375f, -0.0750},
-  .Cd = {{1.0f, 0.0f, 0.0f, 0.0f},
-         {0.0f, 1.0f, 0.0f, 0.0f},
-         {0.0f, 0.0f, 1.0f, 0.0f}},
-  .L_obs = {{0.5000f, 0.0100f, 0.0000f},
-            {0.0000f, 0.4500f, 0.0000f},
-            {0.0000f, 0.0000f, 1.1537f},
-            {0.0000f, 0.0000f, 33.55973f}},
-  .K_x = -10.9002f,
-  .K_xdot = -9.1673f,
-  .K_theta = -26.4308f,
-  .K_w = -4.9308f,
-  .K_i = -6.0f
-};
+    .Ad = {{1.0000f, 0.0100f, 0.0000f, 0.0000f},
+           {0.0000f, 1.0000f, 0.0000f, 0.0000f},
+           {0.0000f, 0.0000f, 1.0018f, 0.0100f},
+           {0.0000f, 0.0000f, 0.3681f, 1.0018f}},
+    .Bd = {0.000051f, 0.0100f, -0.000375f, -0.0750},
+    .Cd = {{1.0f, 0.0f, 0.0f, 0.0f},
+           {0.0f, 1.0f, 0.0f, 0.0f},
+           {0.0f, 0.0f, 1.0f, 0.0f}},
+    .L_obs = {{0.5000f, 0.0100f, 0.0000f},
+              {0.0000f, 0.4500f, 0.0000f},
+              {0.0000f, 0.0000f, 1.1537f},
+              {0.0000f, 0.0000f, 33.55973f}},
+    .K_x = -8.3f,
+    .K_xdot = -11.27,
+    .K_theta = -40.28,
+    .K_w = -5.6,
+    .K_i = -6.0f};
 
-// PLACEHOLDER: Duplicado de la vara larga para la vara corta. 
+// PLACEHOLDER: Duplicado de la vara larga para la vara corta.
 // Sustituir con valores calculados posteriormente.
 static const LQR_Params params_short = {
-  .Ad = {{1.0000f, 0.0100f, 0.0000f, 0.0000f},
-         {0.0000f, 1.0000f, 0.0000f, 0.0000f},
-         {0.0000f, 0.0000f, 1.0018f, 0.0100f},
-         {0.0000f, 0.0000f, 0.3681f, 1.0018f}},
-  .Bd = {0.000051f, 0.0100f, -0.000375f, -0.0750},
-  .Cd = {{1.0f, 0.0f, 0.0f, 0.0f},
-         {0.0f, 1.0f, 0.0f, 0.0f},
-         {0.0f, 0.0f, 1.0f, 0.0f}},
-  .L_obs = {{0.5000f, 0.0100f, 0.0000f},
-            {0.0000f, 0.4500f, 0.0000f},
-            {0.0000f, 0.0000f, 1.1537f},
-            {0.0000f, 0.0000f, 33.55973f}},
-  .K_x = -10.9002f,
-  .K_xdot = -9.1673f,
-  .K_theta = -26.4308f,
-  .K_w = -4.9308f,
-  .K_i = -6.0f
-};
+    .Ad = {{1.0000f, 0.0100f, 0.0000f, 0.0000f},
+           {0.0000f, 1.0000f, 0.0000f, 0.0000f},
+           {0.0000f, 0.0000f, 1.0018f, 0.0100f},
+           {0.0000f, 0.0000f, 0.3681f, 1.0018f}},
+    .Bd = {0.000051f, 0.0100f, -0.000375f, -0.0750},
+    .Cd = {{1.0f, 0.0f, 0.0f, 0.0f},
+           {0.0f, 1.0f, 0.0f, 0.0f},
+           {0.0f, 0.0f, 1.0f, 0.0f}},
+    .L_obs = {{0.3000f, 0.0100f, 0.0000f},
+              {0.0000f, 0.2500f, 0.0000f},
+              {0.0000f, 0.0000f, 0.7614f},
+              {0.0000f, 0.0000f, 15.56f}},
+    .K_x = -6.56f,
+    .K_xdot = -8.55,
+    .K_theta = -30.8,
+    .K_w = -2.9708f,
+    .K_i = -01.0f};
 
 // =============================================================================
 // 3. VARIABLES GLOBALES DE ESTADO
@@ -133,7 +131,8 @@ static PIDController g_ss_integrator;
 //  El término L·(y − Cd·x̂) corrige la predicción con el error de innovación,
 //  manteniendo el estimador sincronizado con las mediciones reales.
 // =============================================================================
-static void luenberger_update(const LQR_Params *pLQR, const float y[3], float u_prev) {
+static void luenberger_update(const LQR_Params *pLQR, const float y[3],
+                              float u_prev) {
   // 1. Innovación: diferencia entre medición real y predicción
   //    innov[i] = y[i] - (Cd · x_hat)[i]
   float innov[3];
@@ -219,7 +218,7 @@ void state_space_controller_task(void *arg) {
 
   // Integrador LQI: integra el error de posición  x_i[k+1] = x_i[k] + (r-x)·Ts
   // Kp=0, Ki=1, Kd=0 → salida = Σ(error)·DT, saturada en ±0.25 m·s
-  PID_Init(&g_ss_integrator, 0.0f, 1.0f, 0.0f, DT, -0.25f, 0.25f, 0.0f);
+  PID_Init(&g_ss_integrator, 0.0f, 1.0f, 0.0f, DT, -1000.0f, 1000.0f, 0.03f);
 
   ESP_LOGI(
       TAG,
@@ -233,7 +232,8 @@ void state_space_controller_task(void *arg) {
       continue;
     }
 
-    const LQR_Params *pLQR = (status_get_pendulum_rod() == ROD_LONG) ? &params_long : &params_short;
+    const LQR_Params *pLQR =
+        (status_get_pendulum_rod() == ROD_LONG) ? &params_long : &params_short;
 
     // ── PASO 1: LECTURA DE SENSORES ────────────────────────────────────
     // θ = 0 en la posición vertical superior (punto de equilibrio)
@@ -245,7 +245,7 @@ void state_space_controller_task(void *arg) {
 
     // ẋ medida = diferencia finita de posición  (entrada al observador como
     // y[1])
-    float x_dot_meas = (g_x_pos - g_x_pos_prev) / DT;
+    float x_dot_meas = g_vel_cmd;
     g_x_pos_prev = g_x_pos;
 
     // ── PASO 2: ACTUALIZACIÓN DEL OBSERVADOR ───────────────────────────
@@ -259,19 +259,6 @@ void state_space_controller_task(void *arg) {
     g_x_dot = x_hat[1]; // ẋ̂  — estimada, reemplaza integral de u
     g_theta_dot_hat =
         x_hat[3]; // θ̂̇  — estimada, reemplaza diferencia finita ruidosa
-
-    // ── PASO 3: INTEGRADOR LQI (5to estado del sistema aumentado) ──────
-    // x_i[k+1] = x_i[k] + (r - x) * Ts
-    float error_pos = g_ref_posicion - g_x_pos;
-    
-    // Anti-windup condicional: 
-    // Solo permitimos que el integrador acumule si estamos muy cerca de la referencia (< 5 cm).
-    // Al ser una pista de 54cm, usar 5cm significa que el integrador solo actúa para
-    // el "ajuste fino" final y vencer la fricción, dejando el viaje largo a la ganancia estable K_x.
-    if (fabsf(error_pos) > 0.05f) {
-      PID_Reset(&g_ss_integrator);
-    }
-    
     g_estado_integrador =
         PID_Compute(&g_ss_integrator, g_ref_posicion, g_x_pos);
 
@@ -279,8 +266,9 @@ void state_space_controller_task(void *arg) {
     // u = -(K_x·x + K_xdot·ẋ̂ + K_theta·θ + K_w·θ̂̇ + K_i·x_i)
     // Los estados medibles (x_pos, theta) usan medición directa del sensor.
     // Los estados no medibles (x_dot, theta_dot) usan el estimador.
-    g_u_control = -((pLQR->K_x * g_x_pos) + (pLQR->K_xdot * g_x_dot) + (pLQR->K_theta * g_theta) +
-                    (pLQR->K_w * g_theta_dot_hat) + (pLQR->K_i * g_estado_integrador));
+    g_u_control = -((pLQR->K_x * g_x_pos) + (pLQR->K_xdot * g_x_dot) +
+                    (pLQR->K_theta * g_theta) + (pLQR->K_w * g_theta_dot_hat) -
+                    (pLQR->K_i * g_estado_integrador));
 
     // Saturación de seguridad
     if (g_u_control > 10000.0f)

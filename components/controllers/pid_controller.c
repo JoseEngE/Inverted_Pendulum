@@ -367,7 +367,7 @@ float PID_Compute(PIDController *pid, float objetivo, float medicion_actual) {
   // Deadband: si el error está dentro del umbral, se limpia integral y
   // derivativo
   if (fabsf(error) <= pid->deadband) {
-    pid->integral = 0.0f;
+    // pid->integral = 0.0f;
     // return 0.0f;
   }
 
