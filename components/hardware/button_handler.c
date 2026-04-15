@@ -178,7 +178,7 @@ void button_handler_task(void *arg) {
     last_button_state = current_button_state;
 
     // Solo permitimos el movimiento manual si NO estamos en vista de sintonización o selección de modo, y el control está apagado
-    if (!pid_is_enabled() && !ss_is_enabled() && !ss_red_is_enabled() && status_get_lcd_view() != VIEW_PID_GAINS && status_get_lcd_view() != VIEW_CONTROL_MODE) {
+    if (!pid_is_enabled() && !ss_is_enabled() && !ss_red_is_enabled() && status_get_lcd_view() != VIEW_PID_GAINS && status_get_lcd_view() != VIEW_CONTROL_MODE && status_get_lcd_view() != VIEW_ROD_SELECTION) {
 
       // --- LÓGICA DE CALIBRACIÓN (HOMING) ---
       if (is_command_button_pressed(CALIBRATION_BUTTON_GPIO)) {
@@ -344,6 +344,16 @@ void button_handler_task(void *arg) {
           int prev_mode = (int)status_get_control_mode() - 1;
           if (prev_mode < 0) prev_mode = 2;
           status_set_control_mode((control_mode_t)prev_mode);
+          vTaskDelay(pdMS_TO_TICKS(150));
+        }
+      } else if (status_get_lcd_view() == VIEW_ROD_SELECTION) {
+        int left_button_state = gpio_get_level(MANUAL_LEFT_BUTTON_GPIO);
+        int right_button_state = gpio_get_level(MANUAL_RIGHT_BUTTON_GPIO);
+
+        if ((right_button_state == 0 && left_button_state == 1) || (left_button_state == 0 && right_button_state == 1)) {
+          pendulum_rod_t act = status_get_pendulum_rod();
+          if (act == ROD_LONG) status_set_pendulum_rod(ROD_SHORT);
+          else status_set_pendulum_rod(ROD_LONG);
           vTaskDelay(pdMS_TO_TICKS(150));
         }
       }

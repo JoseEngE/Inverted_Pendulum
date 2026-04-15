@@ -29,6 +29,21 @@ control_mode_t status_get_control_mode(void)
     return g_control_mode;
 }
 
+// --- AÑADIDO: Lógica para la Selección de Barra del Péndulo ---
+static volatile pendulum_rod_t g_pendulum_rod = ROD_LONG;
+
+void status_set_pendulum_rod(pendulum_rod_t rod)
+{
+    g_pendulum_rod = rod;
+}
+
+pendulum_rod_t status_get_pendulum_rod(void)
+{
+    return g_pendulum_rod;
+}
+
+
+
 // --- AÑADIDO: Lógica para el estado de la vista de la pantalla ---
 volatile lcd_view_state_t g_lcd_view_state = VIEW_MAIN_STATUS;
 

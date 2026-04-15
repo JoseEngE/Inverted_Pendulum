@@ -291,6 +291,18 @@ void lcd_display_task(void *pvParameters)
             break;
         }
 
+        case VIEW_ROD_SELECTION:
+        {
+            lcd_printf_line(0, "Barra fisica:");
+            pendulum_rod_t active_rod = status_get_pendulum_rod();
+            if (active_rod == ROD_LONG) {
+                lcd_printf_line(1, "< Larga >");
+            } else {
+                lcd_printf_line(1, "< Corta >");
+            }
+            break;
+        }
+
         default:
             // Vista por defecto en caso de error
             lcd_printf_line(0, "Vista Invalida");
