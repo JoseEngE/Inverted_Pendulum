@@ -6,10 +6,10 @@
 #include "freertos/task.h"
 #include "pulse_counter.h" // Para leer la posición del encoder
 #include "pwm_generator.h" // Para la función que mueve el motor
-#include "uart_echo.h"
-#include <math.h> // Para la función de valor absoluto fabs()
+#include <math.h>          // Para la función de valor absoluto fabs()
 #include <stdint.h>
 #include <stdio.h>
+#include "system_status.h"
 
 /************************************************************************************
  *                                                                                  *
@@ -80,6 +80,9 @@
 #define PULLEY_RADIUS_MM 10.0f     // Radio de la polea en mm
 #define TRANSMISSION_RATIO 1.0f    // Relación de transmisión (correa/polea)
 
+#define MAX_ACCEL 2.0f
+#define MAX_VELOCITY 1.1f
+
 /************************************************************************************
  *                        FIN DE LA CONFIGURACIÓN DE PARÁMETROS     *
  ************************************************************************************/
@@ -98,15 +101,38 @@ static PIDController
     g_angle_controller; // Controlador del ángulo (PID completo)
 static PIDController g_position_controller; // Controlador de posición (solo P)
 static PIDController g_velocity_integrator; // Integrador: convierte aceleración
+// Integrador: convierte aceleración
                                             // a velocidad (solo I)
+
+// --- Bancos de parámetros PID por barra ---
+typedef struct {
+    float angle_p, angle_i, angle_d;
+    float pos_p, pos_i, pos_d;
+} PID_TuningBank;
+
+static PID_TuningBank bank_long = {
+    .angle_p = -50.0f, .angle_i = -0.0f, .angle_d = -0.03f,
+    .pos_p = 0.4f, .pos_i = 0.03f, .pos_d = 0.11f
+};
+
+// Placeholder para la vara corta - usa los mismos inicialmente
+static PID_TuningBank bank_short = {
+    .angle_p = -18.0f, .angle_i = -0.0f, .angle_d = -0.03f,
+    .pos_p = 0.4f, .pos_i = 0.03f, .pos_d = 0.11f
+};
 
 // --- Variable para el angulo del pendulo (en Radianes) ---
 static volatile float g_absolute_setpoint = 0.0f;
 
 // Variables globales para monitoreo en LCD
-static volatile float g_position_setpoint_m = 0.0f;
 static volatile float g_current_dynamic_angle_setpoint = 0.0f;
 static volatile float g_current_velocity = 0.0f;
+
+// Variables de telemetría ampliada
+static volatile float g_current_acceleration =
+    0.0f; // Acción de control del PID de ángulo (m/s²)
+static volatile float g_current_angular_velocity =
+    0.0f; // Velocidad angular estimada numéricamente (rad/s)
 
 // --- Variable para la posición del carro ---
 volatile int32_t g_car_position_pulses = 0; // pwm_generator puede actualizarla
@@ -164,32 +190,39 @@ void pid_toggle_enable(void) {
 
 void pid_set_kp(float kp) {
   g_angle_controller.kp = kp;
+  if(status_get_pendulum_rod() == ROD_LONG) bank_long.angle_p = kp;
+  else bank_short.angle_p = kp;
   ESP_LOGI(TAG, "Kp actualizado a: %f", g_angle_controller.kp);
 }
 void pid_set_ki(float ki) {
   g_angle_controller.ki = ki;
+  if(status_get_pendulum_rod() == ROD_LONG) bank_long.angle_i = ki;
+  else bank_short.angle_i = ki;
   ESP_LOGI(TAG, "Ki actualizado a: %f", g_angle_controller.ki);
 }
 void pid_set_kd(float kd) {
   g_angle_controller.kd = kd;
+  if(status_get_pendulum_rod() == ROD_LONG) bank_long.angle_d = kd;
+  else bank_short.angle_d = kd;
   ESP_LOGI(TAG, "Kd actualizado a: %f", g_angle_controller.kd);
 }
 
 // --- AÑADIDO: Implementación de la nueva función 'getter' ---
 float pid_get_setpoint_rad(void) { return g_absolute_setpoint; }
 
-float pid_get_position_setpoint(void) { return g_position_setpoint_m; }
-float pid_get_position_setpoint_m(void) { return g_position_setpoint_m; }
+float pid_get_position_setpoint(void) { return status_get_ref_position(); }
+float pid_get_position_setpoint_m(void) { return status_get_ref_position(); }
 
 void pid_set_position_setpoint_m(float m) {
-  g_position_setpoint_m = m;
-  ESP_LOGI(TAG, "Setpoint de posición actualizado a: %.3f m",
-           g_position_setpoint_m);
+  status_set_ref_position(m);
+  ESP_LOGI(TAG, "Setpoint de posición actualizado a: %.3f m", m);
 }
 float pid_get_dynamic_angle_setpoint_rad(void) {
   return g_current_dynamic_angle_setpoint;
 }
 float pid_get_velocity(void) { return g_current_velocity; }
+float pid_get_acceleration(void) { return g_current_acceleration; }
+float pid_get_angular_velocity(void) { return g_current_angular_velocity; }
 
 // --- AÑADIDO: Implementación de la función de deshabilitación forzada ---
 void pid_force_disable(void) {
@@ -223,24 +256,42 @@ void pid_controller_task(void *arg) {
   TickType_t last_wake_time = xTaskGetTickCount();
 
   // Inicializar el controlador PID (Salida en aceleración m/s^2)
-  PID_Init(&g_angle_controller, 37.0f, 308.01f, 0.03f, loop_period_in_seconds,
-           -2.0f, 2.0f, DEAD_BAND_ANGLE);
+  PID_Init(&g_angle_controller, -18.0f, -0.0f, -0.02f, loop_period_in_seconds,
+           -MAX_ACCEL, MAX_ACCEL, DEAD_BAND_ANGLE);
 
   // Inicializar el controlador de posición (solo proporcional)
-  PID_Init(&g_position_controller, -0.4f, -0.03f, -0.11f,
-           loop_period_in_seconds, -0.034f, 0.034f, 0.0f);
+  PID_Init(&g_position_controller, 0.4f, 0.03f, 0.15f, loop_period_in_seconds,
+           -0.034f, 0.034f, 0.0f);
 
   // Inicializar el integrador de velocidad (solo I, ganancia 1)
   // Convierte la aceleración m/s^2 a velocidad m/s
   PID_Init(&g_velocity_integrator, 0.1f, 0.9f, 0.0f, loop_period_in_seconds,
-           -0.72f, 0.72f, 0.0f);
+           -MAX_VELOCITY, MAX_VELOCITY, 0.0f);
 
   // Reseteamos el error anterior al habilitar para evitar un pico inicial en D
   pid_toggle_enable(); // Habilita y resetea
   pid_toggle_enable(); // Deshabilita de nuevo, pero el estado está limpio
 
+  static pendulum_rod_t s_last_rod = ROD_LONG;
+
   while (1) {
     vTaskDelayUntil(&last_wake_time, pdMS_TO_TICKS(PID_LOOP_PERIOD_MS));
+
+    pendulum_rod_t current_rod = status_get_pendulum_rod();
+    if (current_rod != s_last_rod) {
+      PID_TuningBank *bank = (current_rod == ROD_LONG) ? &bank_long : &bank_short;
+      g_angle_controller.kp = bank->angle_p;
+      g_angle_controller.ki = bank->angle_i;
+      g_angle_controller.kd = bank->angle_d;
+      g_position_controller.kp = bank->pos_p;
+      g_position_controller.ki = bank->pos_i;
+      g_position_controller.kd = bank->pos_d;
+      s_last_rod = current_rod;
+      PID_Reset(&g_angle_controller);
+      PID_Reset(&g_position_controller);
+      PID_Reset(&g_velocity_integrator);
+      ESP_LOGI(TAG, "Cargado banco de sintonía PID para barra %s", (current_rod == ROD_LONG) ? "LARGA" : "CORTA");
+    }
 
     if (!g_pid_enabled) {
       PID_Reset(&g_angle_controller);
@@ -251,12 +302,12 @@ void pid_controller_task(void *arg) {
 
     // 1. MEDIR estado actual en radianes y la posicón en metros
 
-    float current_angle_rad = pulse_counter_get_angle_rad();
-    float current_position_m = pid_get_car_position_m();
+    float current_angle_rad = pulse_counter_get_angle_rad() - (float)M_PI;
+    float current_position_m = -pid_get_car_position_m();
 
     // --- Lógica de control de posición ---
-    // El setpoint de posición se establece mediante pid_set_position_setpoint_m
-    float position_setpoint_m = g_position_setpoint_m;
+    // El setpoint de posición se obtiene de system_status
+    float position_setpoint_m = status_get_ref_position();
 
     // Calcular el offset en radianes usando el controlador de posición
     float offset_angle_rad = PID_Compute(
@@ -265,7 +316,7 @@ void pid_controller_task(void *arg) {
     // Guardar para el LCD
 
     // Calcular el setpoint dinámico (en radianes)
-    float dynamic_angle_setpoint_rad = g_absolute_setpoint + offset_angle_rad;
+    float dynamic_angle_setpoint_rad = offset_angle_rad;
 
     // 2. CALCULAR ERROR de ángulo usando el setpoint dinámico
     // La salida del PID es aceleración, se integra a velocidad
@@ -275,8 +326,20 @@ void pid_controller_task(void *arg) {
     // Integrador: convierte aceleración a velocidad (PID con solo Ki=1)
     float velocity = PID_Compute(&g_velocity_integrator, acceleration, 0.0f);
 
+    // Velocidad angular numérica (diferencia finita en cada ciclo)
+    static float s_prev_angle_rad = 0.0f;
+    float angular_velocity =
+        (current_angle_rad - s_prev_angle_rad) / (PID_LOOP_PERIOD_MS / 1000.0f);
+    s_prev_angle_rad = current_angle_rad;
+
+    // Guardar para telemetría
+    g_current_acceleration = acceleration;
+    g_current_velocity = velocity;
+    g_current_angular_velocity = angular_velocity;
+    g_current_dynamic_angle_setpoint = dynamic_angle_setpoint_rad;
+
     // 6. ACTUAR: Establecer la velocidad del motor
-    set_motor_velocity(velocity);
+    set_motor_velocity(-velocity);
   }
 }
 
@@ -305,7 +368,7 @@ float PID_Compute(PIDController *pid, float objetivo, float medicion_actual) {
   // Deadband: si el error está dentro del umbral, se limpia integral y
   // derivativo
   if (fabsf(error) <= pid->deadband) {
-    pid->integral = 0.0f;
+    // pid->integral = 0.0f;
     // return 0.0f;
   }
 
@@ -316,7 +379,7 @@ float PID_Compute(PIDController *pid, float objetivo, float medicion_actual) {
   float D = pid->kd * (error - pid->ultimo_error) / pid->dt;
 
   // Cálculo temporal de la integral
-  float nueva_integral = pid->integral + (error / 2 * pid->dt);
+  float nueva_integral = pid->integral + (error * pid->dt);
   float I = pid->ki * nueva_integral;
 
   float salida_total = P + I + D;
@@ -445,7 +508,7 @@ void set_motor_velocity(float velocity_ms) {
 static float get_meters_per_pulse(void) {
   // Reemplazando fórmulas de microstepping/poleas por la constante ya utilizada
   // en el proyecto
-  float PULSOS_POR_CM = 2500.0f;
+  float PULSOS_POR_CM = 813.709f;
   float pulsos_por_metro = PULSOS_POR_CM * 100.0f;
   return 1.0f / pulsos_por_metro;
 }

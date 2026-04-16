@@ -1,142 +1,288 @@
-# Inverted Pendulum Project (ESP32 & ESP-IDF)
+# Inverted Pendulum — ESP32 & ESP-IDF
 
-Este repositorio contiene el código fuente para el control de un **Péndulo Invertido** montado sobre un carro deslizante, desarrollado utilizando un microcontrolador ESP32 y el framework de desarrollo oficial de Espressif (ESP-IDF).
-
-## 🚀 Arquitectura del Proyecto
-
-El proyecto está diseñado bajo una arquitectura de sistema en tiempo real (RTOS) usando FreeRTOS. Se divide en varias tareas concurrentes que garantizan que el control (PID) tenga la máxima prioridad, mientras que las métricas y la interfaz de usuario se manejan en un segundo plano.
-
-### Flujo de Tareas (FreeRTOS Tasks)
-1. **`PID_Controller` (Prioridad 5):** Es el corazón del proyecto. Se ejecuta a una frecuencia fija (100 Hz / cada 10ms) y está encargado de leer la inclinación del péndulo, calcular el error respecto al punto de equilibrio (Setpoint 0) y generar un comando de velocidad y dirección usando un lazo de control PID continuo.
-2. **`Motor_Control` (Prioridad 4):** Escucha permanentemente una cola de mensajes (`motor_command_queue`). Al recibir un comando del PID, inyecta la señal PWM directamente al driver del motor paso a paso con la nueva frecuencia (velocidad) exigida de forma ininterrumpida, permitiendo un movimiento suave y sin tirones.
-3. **`button_handler_task` (Prioridad 4):** Se encarga de la interfaz física. Monitorea:
-   - Botón de Activar/Desactivar PID.
-   - Botones de movimiento manual (Jogging Izquierda / Derecha).
-   - Sensores de Final de Carrera (Paradas de Emergencia).
-   - Botón de cambio de vistas en la pantalla LCD.
-   - Ejecución de la rutina automática de Calibración/Homing.
-4. **`uart_echo_task` (Prioridad 3):** Permite recibir comandos y enviar telemetría a través del cable USB/Serial para graficar o depurar en el PC.
-5. **`LCDDisplay` (Prioridad 3):** Tarea no crítica que actualiza una pantalla LCD 16x2 a través de I2C, mostrando vistas del estado del PID, posición, errores y menús de calibración.
+Control de un **péndulo invertido sobre carro deslizante** implementado en C con ESP-IDF (FreeRTOS), con soporte para dos estrategias de control intercambiables en tiempo real: **PID en cascada** y **realimentación de estados (LQI)**.
 
 ---
 
-## ⚙️ Componentes Principales e Implementación
+## 📁 Estructura del Proyecto
 
-* **Controlador PID en Cascada (`pid_controller.c`):** 
-  Implementa una robusta arquitectura de control dividida en tres etapas clave para mantener el péndulo en equilibrio y el carro dentro del riel:
-  1. **Lazo Externo de Posición (Lento):** Se encarga de la posición métrica u odometría del carro. Al percibir un desvío respecto a la posición objetivo, determina un pequeño ángulo de "offset". Físicamente, ordena al péndulo inclinarse levemente para forzar al carro a desplazarse hacia ese lado en un intento por recuperar el equilibrio.
-  2. **Lazo Interno de Ángulo (Rápido):** Suma el "0" absoluto (vertical ideal) más el "offset" de posición para crear el *Setpoint Dinámico*. Calcula con precisión milimétrica, leyendo el encoder angular y procesando el PID completo, la **aceleración (m/s²)** inminente que debe generarse para que el péndulo no caiga.
-  3. **Integrador de Velocidad:** Dado que el motor paso a paso requiere velocidades de paso constantes y no tirones de aceleración, un tercer bloque integrador (Ganancia `Ki`) transforma continuamente la aceleración del Lazo de Ángulo en una **velocidad de actuación (m/s)** plana y suave, que a su vez se traduce al hardware en Frecuencia de pulsos.
-  Adicionalmente cuenta con **Banda Muerta (Dead-band)** en los cero grados absolutos para cortar energía si el error es despreciable evitando "temblores" y desgaste, así como saturación **Anti-Windup** en la rama integral para suprimir sobre-reacciones erráticas irreversibles en choques.
-* **Generador PWM (`pwm_generator.c`):** 
-  Utiliza el periférico de hardware **LEDC** del ESP32. Envía pulsos asíncronos y continuos con un ciclo de trabajo del 50%. La velocidad se controla ajustando la frecuencia (`ledc_set_freq`) al vuelo sin bloquear la tarea, reaccionando instantáneamente a las exigencias del PID.
-* **Contador de Pulsos (`pulse_counter.c`):** 
-  Utiliza el hardware **PCNT** del ESP32 dedicado a leer el encoder incremental (cuadratura) acoplado al eje del péndulo rotativo. Ofrece lecturas precisas sub-milimétricas sin gastar recursos de la CPU.
-* **Interfaz y Emergencias (`button_handler.c`):** 
-  Garantiza la seguridad mecánica. Si alguno de los interruptores de límite de carrera es alcanzado, el PID se desactiva enviando y obligando a la frecuencia PWM ir a 0 Hz.
-
----
-
-## 🛠️ Pines y Conexiones Físicas (Hardware Setup)
-
-*(Basado en las definiciones del código)*
-
-### Encoders (PCNT)
-* **Pin de Fase A:** Definido internamente en `pulse_counter.h`
-* **Pin de Fase B:** Definido internamente en `pulse_counter.h`
-
-### Motor Driver (Señales Step / Dir)
-* **Pin PWM (Pulsos de paso - STEP):** GPIO 32
-* **Pin de Dirección (DIR):** GPIO 33
-
-### Interfaz Física (Botones y Sensores)
-* **Activar/Desactivar PID:** GPIO 18
-* **Movimiento Manual Izquierda:** GPIO 16
-* **Movimiento Manual Derecha:** GPIO 17
-* **Cambiar Vista LCD:** GPIO 19
-* **Botón de Calibración:** GPIO 15
-* **Final de Carrera Izquierdo (Emergencia):** GPIO 34
-* **Final de Carrera Derecho (Emergencia):** GPIO 35
-
----
-
-## 🎯 Instrucciones de Uso y Puesta en Marcha
-
-1. **Encendido:** Al iniciar, la pantalla LCD mostrará un mensaje de inicialización. El sistema arranca con el control PID **deshabilitado** por seguridad.
-2. **Calibración (Homing):** Es el paso fundamental. Mantén el péndulo colgado (hacia abajo). Presiona el botón de **Calibración (GPIO 15)**.
-   * El carro se moverá lentamente hasta tocar un final de carrera, luego se moverá al opuesto midiendo la distancia total del riel.
-   * Tras chocar con ambos, el sistema calculará el centro exacto y el carro viajará a esa posición media.
-   * El sistema asumirá automáticamente que esta posición de reposo del encoder mirando hacia el suelo es "-180°" y establecerá su punto de equilibrio (Setpoint) 180 grados en dirección opuesta (arriba puramente vertical).
-3. **Movimiento Manual (Jogging):** Si el PID está apagado, puedes usar los botones manuales para desplazar el carro a conveniencia y despegarlo de las paredes.
-4. **Activación del Péndulo:**
-   * Levanta el péndulo manualmente hasta su punto aproximado de equilibrio superior (vertical).
-   * Presiona el botón de **Activar PID (GPIO 18)**. 
-   * El motor comenzará a rastrear la posición instantáneamente y mantendrá el péndulo balanceado. 
-   * Volver a presionar el botón desactivará el motor y dejará caer el péndulo.
-5. **Parada de Emergencia:** Si en cualquier momento de descontrol agresivo el marco del carro golpea uno de los límites izquierdo (34) o derecho (35), el motor se detendrá al instante protegiendo la estructura.
+```
+Inverted_Pendulum/
+├── main/
+│   └── main.c                   # Punto de entrada: inicialización y creación de tareas
+├── components/
+│   ├── controllers/             # Algoritmos de control
+│   │   ├── pid_controller.c     # Controlador PID en cascada (ángulo + posición)
+│   │   ├── state_space_controller.c  # Controlador LQI por realimentación de estados
+│   │   └── include/
+│   │       ├── pid_controller.h
+│   │       └── state_space_controller.h
+│   ├── hardware/                # Drivers de bajo nivel
+│   │   ├── pwm_generator.c      # Generación PWM (LEDC) + tarea Motor_Control
+│   │   ├── pulse_counter.c      # Lectura del encoder cuadratura (PCNT)
+│   │   ├── button_handler.c     # Botones, jogging manual, finales de carrera, homing
+│   │   └── include/
+│   │       ├── pwm_generator.h  # Pines GPIO, motor_command_t, API pwm
+│   │       ├── pulse_counter.h
+│   │       └── button_handler.h
+│   ├── telemetry/               # Canal de telemetría hacia el PC
+│   │   ├── bluetooth_telemetry.c  # Telemetría en tiempo real vía Bluetooth Classic (SPP)
+│   │   ├── uart_echo.c          # Echo UART para depuración liviana
+│   │   └── include/
+│   │       ├── bluetooth_telemetry.h
+│   │       └── uart_echo.h
+│   ├── simulink_comms/          # Puente binario ESP32 ↔ MATLAB/Simulink
+│   │   ├── simulink_comms.c     # TX de 6 floats a 100 Hz por UART0
+│   │   └── include/
+│   │       └── simulink_comms.h
+│   ├── display/                 # Interfaz visual LCD 16×2 (I2C)
+│   │   ├── lcd_controller.c     # Tarea LCDDisplay, vistas y menú de calibración
+│   │   ├── hd44780.c            # Driver bajo nivel HD44780
+│   │   └── include/
+│   ├── system_core/             # Estado global compartido entre componentes
+│   │   ├── system_status.c      # Variables de estado: modo de control, vista LCD, jogging
+│   │   └── include/
+│   │       └── system_status.h
+├── matlab/
+│   └── simulacion_serial.slx   # Modelo Simulink para adquisición y análisis
+├── sdkconfig                    # Configuración del ESP-IDF (generada por menuconfig)
+├── sdkconfig.defaults           # Opciones por defecto fijadas del proyecto
+└── CMakeLists.txt
+```
 
 ---
 
-*Proyecto configurado y compilable exclusivamente bajo el entorno ESP-IDF Extension (No PlatformIO). Funciona sobre CMake Tools.*
+## 🏗️ Arquitectura del Sistema
+
+El sistema corre sobre **FreeRTOS** con múltiples tareas concurrentes ordenadas por prioridad. La tabla siguiente resume cada tarea activa:
+
+| Tarea | Prioridad | Componente | Función |
+|---|---|---|---|
+| `StateSpace` | 5 | `controllers` | Controlador LQI activo cuando `USE_STATE_SPACE_CONTROLLER=1` |
+| `PID_Controller` | 5 | `controllers` | Controlador PID en cascada (ángulo + posición) |
+| `Motor_Control` | 4 | `hardware` | Escucha `motor_command_queue` y ejecuta PWM sin bloquear |
+| `button_handler_task` | 4 | `hardware` | Botones, jogging, finales de carrera, homing |
+| `SimTX` | 3 | `simulink_comms` | Telemetría binaria hacia Simulink a 100 Hz |
+| `LCDDisplay` | 3 | `display` | Actualiza pantalla LCD (no crítico) |
+| `BT Telemetry` | — | `telemetry` | Stream CSV por Bluetooth Classic (SPP) |
+
+> **Selección de controlador:** La macro `#define USE_STATE_SPACE_CONTROLLER 1` en `main.c` activa el modo LQI. Ambas tareas se crean siempre, pero sólo una controla el motor a la vez mediante las funciones `ss_is_enabled()` / `pid_is_enabled()`.
 
 ---
 
-## 💡 Posibles Mejoras (Roadmap)
+## ⚙️ Componentes — Descripción Detallada
 
-A continuación, se enumeran las optimizaciones técnicas identificadas para mejorar la estabilidad y limpieza del código.
+### `controllers` — Algoritmos de Control
 
-### 1. Mejoras Críticas para el Controlador PID (Resolución de Estabilidad)
+#### PID en Cascada (`pid_controller.c`)
+Implementa tres etapas encadenadas:
 
-El péndulo invertido es un sistema inestable de alta dinámica. Para estabilizarlo con solidez, el control necesita precisión matemática estricta:
+1. **Lazo de posición (lento):** Calcula un ángulo de *offset* para que el carro se desplace hacia el centro del riel.
+2. **Lazo de ángulo (rápido, 100 Hz):** Suma el *offset* al setpoint vertical (0°) y genera una **aceleración** de corrección vía PID completo (P + I + D).
+3. **Integrador de velocidad:** Convierte la aceleración en **velocidad de actuación** continua (m/s), que se traduce a frecuencia de pulsos para el driver.
 
-* **Hardware Timer (`esp_timer`) vs FreeRTOS (`vTaskDelayUntil`)**: 
-  Actualmente, el PID vive dentro de un bucle de RTOS que duerme mediante `vTaskDelayUntil(10ms)`. Sin embargo, el "Scheduler" de RTOS tiene latencias y bloqueos aleatorios generados por otras tareas concurrentes (LCD, UART, Interrupciones Wifi/Bluetooth). A este error de ejecución milimétrico se le conoce como **"Jitter"**.
-  **Mejora:** Eliminar el `vTaskDelayUntil` y trasladar la lógica del PID a un callback de **`esp_timer`**. Este es un hardware interno en el silicio que interrumpe brutal y atómicamente todo lo demás (con resolución de microsegundos) para clavar la ejecución matemática exactamente en el período correcto sin Jitter RTOS.
-  
-* **Cálculo Real del Diferencial de Tiempo (`dt`)**:
-  Al asumir que el ciclo dura siempre `10ms` constantes (`loop_period_in_seconds`), cualquier Jitter del RTOS convierte el cálculo del factor Derivativo (`D = (Error - LastError)/dt`) en puro ruido o latigazos virtuales hacia el motor.
-  **Mejora:** Capturar el tiempo real pasado mediante `esp_timer_get_time()` y alimentar el verdadero delta `dt` en cada iteración de `PID_Compute()`.
+Incluye **banda muerta** configurable alrededor de 0° y **anti-windup** en la rama integral.
 
-* **Fijación de Tareas (Core Affinity)**: 
-  Usar `xTaskCreatePinnedToCore` para asegurar que las tareas de control de hardware puro (`Motor_Control`) vivan permanentemente sin obstrucciones en el Núcleo 1 (PRO_CPU), arrinconando tareas superficiales como Pantallas I2C y Serial Data hacia el Núcleo 0 (APP_CPU).
+API expuesta al módulo `simulink_comms`:
+```c
+float pid_get_car_position_m(void);
+float pid_get_acceleration(void);
+float pid_get_velocity(void);
+float pid_get_angular_velocity(void);
+uint64_t pid_get_run_time_ms(void);
+```
 
-### 2. Limpieza de Deuda Técnica
-* **Migración del driver PCNT**: Actualizar el driver obsoleto `driver/pcnt.h` usado en `pulse_counter.c` al nuevo estándar de ESP-IDF v5 `driver/pulse_cnt.h`, que es robusto en concurrencia (thread-safe) y maneja index callbacks en hardware puro.
-* **Limpieza de variables**: Remover variables lógicas sin aplicación directa en `pid_controller.c` (`velocity`), aliviando los warnings de compilación (Clean Build).
+#### Control por Realimentación de Estados — LQI (`state_space_controller.c`)
+Controlador moderno basado en la dinámica linealizada del péndulo. Implementa un regulador LQI (LQR + integrador de posición) con las siguientes variables de estado:
 
-### 3. Solución al Bucle Abierto de la Odometría
-Actualmente, el software estima la posición de la base del péndulo calculándola teóricamente ("Si envié una frecuencia Y durante X milisegundos, di Z pasos."). A esto se le llama **Control de Lazo Abierto**. Si la inercia del movimiento hace que el motor eléctrico "salte" o pierda un paso real, el ESP32 no lo sabrá nunca y su idea virtual del punto de centro/cero del riel irá "derivando".
+| Variable | Descripción |
+|---|---|
+| `theta` | Ángulo del péndulo (rad) |
+| `theta_dot_hat` | Velocidad angular estimada |
+| `x_pos` | Posición del carro (m) |
+| `x_dot` | Velocidad del carro (m/s) |
+| `u_control` | Señal de control calculada |
 
-* **Solución de Código (Re-homing Dinámico)**: Dar inteligencia a los Fines de Carrera (GPIO 34, 35). Más que simple "Botón de Parada de Emergencia", si el carro deriva tanto como para rosar uno, capturar ese evento y sobreescribir con dureza la variable `g_car_position_pulses` forzando la sincronización de las coordenadas cero de vuelta a la realidad.
-* **Solución Fija de Hardware (Loopback de Pulsos)**: Cablear externamente el propio pin emisor PWM del Motor (STEP - GPIO 32) hacia un módulo PCNT de lectura sobrante del ESP32. Esto cambiaría el cálculo teórico por un conteo absoluto 100% puro de pulsos emitidos físicamente.
+API pública:
+```c
+bool  ss_is_enabled(void);
+float ss_get_theta(void);
+float ss_get_x_pos(void);
+float ss_get_x_dot(void);
+float ss_get_theta_dot_hat(void);
+float ss_get_u_control(void);
+```
 
-### 4. Robustez Mecánica y de Software
-* **Apagado de Emergencia por Caída Irreversible**: Implementar una condición en el código que detenga el PID inmediatamente si el péndulo supera un ángulo crítico de inclinación (ej. > 45°). En el estado actual, si el péndulo cae irrevocablemente, el control enviará la máxima potencia sin fin para intentar recuperarlo, logrando únicamente chocar el carro con violencia contra las poleas.
-* **Prevención de 'Stack Overflow'**: Aumentar la huella de memoria (Stack) asignada a las tareas de FreeRTOS. Trabajar con constantes mínimas (`configMINIMAL_STACK_SIZE`) en un ecosistema que usa rutinas de log (`ESP_LOG`) y matemática flotante termina rutinariamente en cuelgues y reinicios repentinos de hardware.
+---
 
-### 5. Modularidad y Persistencia (Tuning)
-* **Memoria No Volátil (NVS)**: Guardar las constantes sintonizadas del PID (Kp, Ki, Kd) en la memoria Flash (NVS) del ESP32. Esto evitaría el fastidio de perder los valores arduamente ajustados a cada apagado / reseteo de la tarjeta.
-* **Archivo de Configuración Centralizado (`config.h`)**: Agrupar constantes, distribución de pines y dimensiones mecánicas que ahora mismo se encuentran dispersas a lo largo de los archivos (`main.c`, `pulse_counter.h`, etc.) dentro de un único cabecero maestro de configuración.
+### `hardware` — Drivers de Bajo Nivel
 
-### 6. Mejoras "Con Precaución" (Alertas Técnicas)
-Ciertas aproximaciones clásicas de software, si bien son buenas ideas en proyectos regulares, podrían atentar críticamente contra la rapidez que demanda un péndulo invertido si no se aíslan apropiadamente:
-* ⚠️ **Suavizado de Motor (Ramping Trapezoidal)**: Añadir curvas S de aceleración/desaceleración para la corrección suaviza el deslizamiento, pero le introduce muchísima pre-latencia al mandato del actuador. El PID de un péndulo exige correcciones torques instantáneos, no curvos, o se desbalanceará. (Usarlo solo para desplazamientos manuales de "Homing").
-* ⚠️ **Filtros de Software en los Encoders (Media Móvil)**: Suavizar la señal del sensor óptico con algoritmos predictivos o generacionales inyecta el temido *Phase Lag* (ver o proyectar un evento milisegundos más tarde de su instante real). Se prefiere utilizar exclusivamente el filtro de ruido del Hardware de Silicio original (`pcnt_filter_enable`).
-* ⚠️ **Módulos Inalámbricos (Wi-Fi/Bluetooth)**: Muy tentador para calibración visual o graficado. Lamentablemente, invocar rutinas criptográficas y de red inalámbricas en el modelo ESP32 levantan masivas Interrupciones (ISR). Si las tareas de control de motores no se clavan estrictamente en el otro núcleo usando "Core Affinity", el procesador dejará "mudo" el motor repetidamente causando caídas esporádicas.
+#### Generador PWM (`pwm_generator.c`)
+- Usa el periférico **LEDC** del ESP32 (`LEDC_TIMER_0`, `LEDC_CHANNEL_0`).
+- Pin STEP: **GPIO 32** — Pin DIR: **GPIO 33**.
+- La `motor_control_task` recibe `motor_command_t {frequency, direction}` desde la cola `motor_command_queue` y ajusta la frecuencia **al vuelo** sin bloquear (`ledc_set_freq`), generando movimiento continuo asíncrono.
+- Duty cycle fijo al 50% (resolución 1-bit para máxima frecuencia alcanzable).
 
-### 7. Testing y Aseguramiento de Calidad (QA)
-Para evitar que un error de software estrelle la máquina física, se recomienda el uso de **Tests Unitarios** enfocados exclusivamente en la matemática de control, ignorando los periféricos o la simulación de física (Cualquier simulación física de robótica debe hacerse en MATLAB/Python, nunca dentro del ESP32).
+#### Contador de Pulsos (`pulse_counter.c`)
+- Usa el periférico **PCNT** del ESP32 para leer el encoder incremental en cuadratura acoplado al eje del péndulo.
+- Expone la posición angular en radianes vía `pulse_counter_get_angle_rad()`.
 
-Se recomienda usar el framework **Unity** (integrado nativamente en ESP-IDF) para someter a pruebas mecánicas a la siguiente función crítica:
-* **Función Objetivo:** `PID_Compute()` (Ubicada en `pid_controller.c`).
-* **Casos de Prueba a Implementar:**
-    1. **Test del Lazo Proporcional:** Inyectar un "Error" constante y verificar que la salida aumente exactamente proporcional a `Kp`.
-    2. **Freno de Integral (Anti-Windup):** Enviar un error gigantesco y mantenido en el tiempo para ver si el valor de la sumatoria Integral sigue creciendo hasta estallar la memoria RAM, o si respeta correctamente los límites de saturación (`MAX_OUTPUT_PULSES`).
-    3. **Resistencia a Banda Muerta (Dead Band):** Inyectar errores sumamente diminutos y menores a `DEAD_BAND_ANGLE`. El test debe pasar únicamente si la función resetea la integral a 0 ($0.0f$), comprobando que el péndulo no intentará auto-corregirse con un microrruido.
-    4. **Caos de Derivada:** Enviar una señal muy picuda (mucho error, luego nada, luego mucho error opuesto) simulando un tirón. Verificar que los cálculos de `(error - ultimo_error)/dt` generen bien sus signos negativos frenando virtualmente el movimiento, descartando que hayan desbordamientos `NaN` en las divisiones.
+#### Manejador de Botones y Emergencias (`button_handler.c`)
+- **GPIO 18:** Activar/Desactivar controlador activo.
+- **GPIO 16 / 17:** Jogging manual (izquierda / derecha).
+- **GPIO 19:** Cambiar vista en LCD.
+- **GPIO 15:** Iniciar rutina de calibración (Homing).
+- **GPIO 34 / 35:** Finales de carrera — detienen el motor y deshabilitan el control inmediatamente.
 
-### 8. Control Avanzado del Sistema
-* **Control por Variables de Estado**: Desarrollar e implementar un módulo de control avanzado mediante realimentación de variables de estado. Esto incluirá la utilización de un **Observador de Luenberger** para estimar aquellos estados dinámicos del sistema que no pueden ser medidos directamente por los sensores, logrando una respuesta más completa y estable.
+---
 
-### 9. Parametrización y Unidades Físicas
-* **Abstracción de Variables Físicas**: Transformar las unidades de hardware en bruto a magnitudes físicas reales. Es necesario mapear los pulsos leídos por el encoder rotativo transformándolos a **Radianes (rad) y Grados (°)**. Asimismo, mapear y traducir los pulsos enviados al motor paso a paso para medir la **posición métrica (mm/cm)** física de desplazamiento que tiene el carrito sobre el riel.
+### `simulink_comms` — Puente Binario ESP32 ↔ MATLAB/Simulink
+
+Envía un paquete binario compacto a **100 Hz** por `UART_NUM_0` (USB/Serial):
+
+```
+[0x56 'V'] [float0] [float1] [float2] [float3] [float4] [float5] [0x0A '\n']
+  1 byte  +       6 × 4 bytes (little-endian)                  +  1 byte  = 27 bytes
+```
+
+| Índice | Variable | Unidad |
+|---|---|---|
+| 0 | `time_ms` | ms |
+| 1 | `theta` | rad |
+| 2 | `x_pos` | m |
+| 3 | `u_control` | m/s² (PID) / u (LQI) |
+| 4 | `x_dot` | m/s |
+| 5 | `theta_dot` | rad/s |
+
+El formato es idéntico tanto para el modo PID como para el modo LQI — el selector interno es `ss_is_enabled()`. El modelo Simulink receptor está en `matlab/simulacion_serial.slx`.
+
+Inicialización en `main.c`:
+```c
+simulink_comms_init(UART_NUM_0, 115200, 6, 0);
+simulink_comms_start_tasks(3, tskNO_AFFINITY, 10); // 100 Hz
+```
+
+---
+
+### `telemetry` — Canal Bluetooth
+
+- **`bluetooth_telemetry.c`:** Emite telemetría en formato CSV por Bluetooth Classic (SPP). Permite monitoreo inalámbrico con herramientas como el script Python del proyecto o cualquier terminal serie BT.
+- **`uart_echo.c`:** Canal UART auxiliar para depuración liviana (log de texto).
+
+> ⚠️ El Bluetooth comparte recursos de radio con el scheduler del ESP32. Si se activa el control, asegurarse de usar `xTaskCreatePinnedToCore` para las tareas críticas de motor/controlador en el **Core 1**, relegando BT al Core 0.
+
+---
+
+### `display` — LCD 16×2 vía I2C
+
+Muestra las siguientes vistas rotativas (botón GPIO 19):
+
+| Vista | Contenido |
+|---|---|
+| `VIEW_MAIN_STATUS` | Estado del controlador activo + ángulo en grados |
+| `VIEW_POSITION` | Posición del carro en cm |
+| `VIEW_PID_GAINS` | Valores Kp, Ki, Kd actuales |
+| `VIEW_VELOCITY` | Velocidad actual del carro |
+| `VIEW_CONTROL_MODE` | Modo activo: PID / LQR |
+| `VIEW_CALIBRATION` | Menú de homing (activado por GPIO 15) |
+
+---
+
+### `system_core` — Estado Global Compartido
+
+Centraliza variables de estado accedidas desde múltiples tareas:
+
+```c
+// Modo de control activo
+typedef enum { MODE_PID, MODE_STATE_SPACE } control_mode_t;
+
+// Vista actual del LCD
+typedef enum { VIEW_MAIN_STATUS, VIEW_POSITION, VIEW_PID_GAINS,
+               VIEW_VELOCITY, VIEW_CONTROL_MODE, VIEW_CALIBRATION } lcd_view_state_t;
+
+// Estado de movimiento manual
+typedef enum { MANUAL_MOVE_NONE, MANUAL_MOVE_LEFT, MANUAL_MOVE_RIGHT } manual_move_state_t;
+```
+
+---
+
+## 🛠️ Pines de Hardware Resumidos
+
+| Señal | GPIO |
+|---|---|
+| STEP — pulsos al driver | 32 |
+| DIR — dirección del motor | 33 |
+| Activar/Desactivar control | 18 |
+| Jogging izquierda | 16 |
+| Jogging derecha | 17 |
+| Cambiar vista LCD | 19 |
+| Calibración / Homing | 15 |
+| Final de carrera izquierdo | 34 |
+| Final de carrera derecho | 35 |
+| Encoder Fase A | Definido en `pulse_counter.h` |
+| Encoder Fase B | Definido en `pulse_counter.h` |
+| LCD I2C SDA / SCL | Definidos en `lcd_controller.h` |
+
+---
+
+## 🚀 Puesta en Marcha
+
+### Requisitos
+- **Toolchain:** ESP-IDF v5.x (extensión VSCode de Espressif recomendada).
+- **Hardware:** ESP32 (no ESP32-S3), driver de motor paso a paso compatible con señales STEP/DIR, encoder incremental en cuadratura.
+- **PC:** MATLAB/Simulink con el modelo `matlab/simulacion_serial.slx` para adquisición de datos.
+
+### Compilar y Flashear
+```bash
+idf.py build
+idf.py -p COMx flash monitor
+```
+
+### Secuencia de Arranque
+1. **Encendido:** La LCD muestra "Bienvenidos… Iniciando". El control arranca **deshabilitado** por seguridad.
+2. **Calibración (Homing):** Con el péndulo colgado hacia abajo, presionar **GPIO 15**.
+   - El carro recorre el riel completo, toca ambos finales de carrera y se posiciona en el centro.
+   - El encoder queda calibrado: posición colgante = −180°, posición vertical = 0° (setpoint).
+3. **Jogging manual:** Con el control desactivado, usar **GPIO 16/17** para mover el carro libremente.
+4. **Activación del control:**
+   - Levantar el péndulo manualmente hasta la vertical.
+   - Presionar **GPIO 18** para habilitar el controlador seleccionado (PID o LQI).
+   - Volver a presionar apaga el control.
+5. **Parada de emergencia:** Si el carro golpea un final de carrera (**GPIO 34/35**), el motor se detiene y el control se deshabilita instantáneamente.
+
+---
+
+## 📡 Adquisición de Datos con Simulink
+
+1. Conectar el ESP32 al PC por USB.
+2. Configurar el puerto COM correcto en el bloque Serial de `simulacion_serial.slx`.
+3. Compilar el firmware con los logs de ESP_LOG **desactivados** para mantener el stream binario limpio (el módulo `simulink_comms` los suprime por defecto).
+4. Iniciar la simulación. Los 6 canales se actualizarán a 100 Hz.
+
+---
+
+## 🗺️ Roadmap
+
+### Deuda Técnica
+- [ ] **Migrar driver PCNT** al API de ESP-IDF v5 (`driver/pulse_cnt.h`) — thread-safe y con callbacks de índice en hardware.
+- [ ] **Reemplazar `vTaskDelayUntil`** en el PID por un callback de `esp_timer` para eliminar jitter del RTOS.
+- [ ] **Calcular `dt` real** con `esp_timer_get_time()` en cada iteración del PID en lugar de asumir 10 ms fijos.
+- [ ] **`xTaskCreatePinnedToCore`:** Anclar tareas de control/motor al Core 1 y BT/LCD al Core 0.
+
+### Mejoras Funcionales
+- [ ] **Re-homing dinámico:** Cuando el carro toca un final de carrera, sobrescribir `g_car_position_pulses` para resincronizar la odometría.
+- [ ] **Watchdog de caída:** Deshabilitar el PID automáticamente si `|theta| > 45°` para evitar colisiones violentas.
+- [ ] **NVS:** Guardar ganancias Kp, Ki, Kd sintonizadas en la Flash para que sobrevivan reinicios.
+- [ ] **`config.h` centralizado:** Unificar pines, dimensiones mecánicas y constantes dispersas en un único cabecero maestro.
+- [ ] **Observador de Luenberger:** Estimar estados no medibles directamente para mejorar la robustez del controlador LQI.
+
+### Testing
+Se recomienda el framework **Unity** (integrado en ESP-IDF) para pruebas unitarias de `PID_Compute()`:
+- Lazo proporcional puro (salida ∝ Kp × error).
+- Anti-windup: error sostenido grande no desborda la integral.
+- Banda muerta: errores menores al umbral producen salida 0.
+- Derivada: señal en diente de sierra genera signos correctos sin `NaN`.
+
+---
+
+*Proyecto compilable exclusivamente con **ESP-IDF** (CMake + Ninja). No compatible con PlatformIO.*

@@ -170,4 +170,16 @@ int32_t pid_get_car_position_pulses(void);
  */
 int pid_meters_to_pulses(float meters);
 
+/**
+ * @brief Obtiene la acción de control del PID de ángulo (m/s² - aceleración comandada).
+ *        Útil para telemetría y sintonización.
+ */
+float pid_get_acceleration(void);
+
+/**
+ * @brief Obtiene la velocidad angular del péndulo estimada numéricamente (rad/s).
+ *        Calculada como diferencia finita del ángulo entre ciclos.
+ */
+float pid_get_angular_velocity(void);
+
 #endif // PID_CONTROLLER_H

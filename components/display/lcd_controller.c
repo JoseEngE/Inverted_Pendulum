@@ -12,6 +12,9 @@
 #include "system_status.h"
 #include "driver/gpio.h"
 #include "esp_rom_sys.h"
+#include "state_space_controller.h" // AÑADIDO para el estado SS
+#include "state_space_reducido.h"   // AÑADIDO para SS_RED
+#include "state_space_funcional.h" // AÑADIDO para SS_FUNC
 
 // --- CONFIGURACIÓN DEL BUS I2C Y PANTALLA ---
 #define I2C_MASTER_PORT I2C_NUM_0      // Puerto I2C a usar (0 o 1)
@@ -175,6 +178,9 @@ void lcd_display_task(void *pvParameters)
         case VIEW_MAIN_STATUS:
         {
             bool is_pid_on = pid_is_enabled();
+            bool is_ss_on = ss_is_enabled();
+            bool is_ss_red_on = ss_red_is_enabled();
+            bool is_ss_func_on = ss_func_is_enabled();
             manual_move_state_t move_state = status_get_manual_move_state();
 
             // Línea 1: Estado prioritario
@@ -188,7 +194,17 @@ void lcd_display_task(void *pvParameters)
             }
             else
             {
-                lcd_printf_line(0, "PID: %s", is_pid_on ? "ACTIVO" : "INACTIVO");
+                if (is_pid_on) {
+                    lcd_printf_line(0, "PID: ACTIVO");
+                } else if (is_ss_on) {
+                    lcd_printf_line(0, "LQR: ACTIVO");
+                } else if (is_ss_red_on) {
+                    lcd_printf_line(0, "LQR_RED: ACTIVO");
+                } else if (is_ss_func_on) {
+                    lcd_printf_line(0, "LQR_FUNC: ACTIVO");
+                } else {
+                    lcd_printf_line(0, "CTRL: INACTIVO");
+                }
             }
 
             // Línea 2: Posición en grados
@@ -262,6 +278,34 @@ void lcd_display_task(void *pvParameters)
         {
             lcd_printf_line(0, "Calibrando...");
             lcd_printf_line(1, "Espere");
+            break;
+        }
+
+        case VIEW_CONTROL_MODE:
+        {
+            lcd_printf_line(0, "Modo de Control:");
+            control_mode_t mode = status_get_control_mode();
+            if (mode == MODE_PID) {
+                lcd_printf_line(1, "< PID >");
+            } else if (mode == MODE_STATE_SPACE) {
+                lcd_printf_line(1, "< Est(LQR Id) >");
+            } else if (mode == MODE_STATE_SPACE_RED) {
+                lcd_printf_line(1, "< Est(LQR Red) >");
+            } else {
+                lcd_printf_line(1, "< Est(LQR Fun) >");
+            }
+            break;
+        }
+
+        case VIEW_ROD_SELECTION:
+        {
+            lcd_printf_line(0, "Barra fisica:");
+            pendulum_rod_t active_rod = status_get_pendulum_rod();
+            if (active_rod == ROD_LONG) {
+                lcd_printf_line(1, "< Larga >");
+            } else {
+                lcd_printf_line(1, "< Corta >");
+            }
             break;
         }
 
