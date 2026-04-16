@@ -56,18 +56,18 @@ typedef struct {
  * G = Gamma2 - L*Gamma1 = -0.075 - 40*(-0.000375) = -0.06
  * H = F*L + Phi21 - L*Phi11 = -15.6319
  */
-static const RED_Params params_long = {.F_obs = 0.5f,
+static const RED_Params params_short = {.F_obs = 0.5f,
                                        .H_obs = -0.04f,
                                        .G_obs = -23.7f,
                                        .L_obs = 50.20f,
-                                       .K_x = -14.0f,
-                                       .K_xdot = -8.4f,
-                                       .K_theta = -88.7f,
-                                       .K_w = -7.29f,
-                                       .K_i = -8.0f};
+                                       .K_x = -29.812f,
+                                       .K_xdot = -21.86f,
+                                       .K_theta = -48.64f,
+                                       .K_w = -7.23f,
+                                       .K_i = -18.60f};
 
 // Placeholder: Duplicado para la vara corta (ajustar tras cálculo en MATLAB)
-static const RED_Params params_short = {.F_obs = 0.6018f,
+static const RED_Params params_long = {.F_obs = 0.6018f,
                                         .H_obs = -0.0600f,
                                         .G_obs = -15.6319f,
                                         .L_obs = 40.0f,

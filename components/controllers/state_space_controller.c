@@ -55,7 +55,7 @@ typedef struct {
   float K_i;
 } LQR_Params;
 
-static const LQR_Params params_long = {
+static const LQR_Params params_short = {
     .Ad = {{1.0000f, 0.0100f, 0.0000f, 0.0000f},
            {0.0000f, 1.0000f, 0.0000f, 0.0000f},
            {0.0000f, 0.0000f, 1.0018f, 0.0100f},
@@ -68,15 +68,15 @@ static const LQR_Params params_long = {
               {0.0000f, 0.500f, 0.0000f},
               {0.0000f, 0.0000f, 0.9956f},
               {0.0000f, 0.0000f, 26.3f}},
-    .K_x = -14.0f,
-    .K_xdot = -8.4f,
-    .K_theta = -88.7f,
-    .K_w = -7.29f,
-    .K_i = -8.0f};
+    .K_x = -29.812f,
+    .K_xdot = -21.86f,
+    .K_theta = -48.64f,
+    .K_w = -7.23f,
+    .K_i = -18.60f};
 
 // PLACEHOLDER: Duplicado de la vara larga para la vara corta.
 // Sustituir con valores calculados posteriormente.
-static const LQR_Params params_short = {
+static const LQR_Params params_long = {
     .Ad = {{1.0000f, 0.0100f, 0.0000f, 0.0000f},
            {0.0000f, 1.0000f, 0.0000f, 0.0000f},
            {0.0000f, 0.0000f, 1.0018f, 0.0100f},
