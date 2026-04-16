@@ -1,0 +1,26 @@
+# Funcionalidad de Selección de Barra Pendular
+
+Se ha implementado al sistema la capacidad de soportar múltiples perfiles de constantes y matrices dependientes del estado físico del hardware (Barra Larga / Barra Corta) y que pueden ser alterados a través del menú LCD en caliente.
+
+## Cambios Realizados
+
+1. **Nueva Interfaz en Pantalla:**
+   - Hay una nueva vista llamada `VIEW_ROD_SELECTION`.
+   - Se muestra `"Barra fisica:"` y abajo `< Larga >` o `< Corta >`.
+
+2. **Agrupación en Estructuras LQR:**
+   - Refactorizamos `state_space_controller.c` y `state_space_reducido.c`. 
+   - Las constantes de diseño que antes estaban sueltas (`K_x`, `Ad`, `F_obs`) ahora se agrupan en `LQR_Params` y `LQR_Red_Params`.
+   - Se mantiene para ambos un objeto gemelo "placeholder" para cuando vayas a colocar los valores re-calculados de la barra pequeña. Al alternar polos mediante el status local, el controlador redirige el puntero al nuevo paquete de datos ¡Sin retardo en el cómputo!
+
+3. **Bancos Activos para el Control PID:**
+   - La pantalla de calibración PID guarda tu "tuning". Para evitar que afinar una barra destruya la optimización de la otra, el `pid_controller.c` posee 2 "Bancos de Memoria" (`bank_long` y `bank_short`).
+   - Al cambiar la barra, se recarga internamente tu configuración correspondiente.
+
+## Pruebas y Validación
+
+> [!TIP]
+> **Listo para compilar**
+> Todo el proceso se completó con éxito. Los `structs` se mapearon adecuadamente para mantener la limpieza del estado. 
+
+Ahora cada vez que diseñes un nuevo controlador, simplemente copia tus valores de MATLAB dentro de las diferentes secciones en el archivo del componente.

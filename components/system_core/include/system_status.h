@@ -38,6 +38,7 @@ typedef enum
     VIEW_PID_GAINS,      // Vista terciaria: Valores de las ganancias Kp, Ki, Kd
     VIEW_VELOCITY,       // Cuarta vista: Velocidad
     VIEW_CONTROL_MODE,   // Quinta vista: Selección de modo de control (PID/LQR)
+    VIEW_ROD_SELECTION,  // Sexta vista: Selección de barra (Larga/Corta)
     VIEW_COUNT,           // ¡Importante! Siempre al final, para saber cuántas vistas hay
     VIEW_CALIBRATION //++
 } lcd_view_state_t;
@@ -46,11 +47,23 @@ typedef enum
 typedef enum
 {
     MODE_PID,
-    MODE_STATE_SPACE
+    MODE_STATE_SPACE,
+    MODE_STATE_SPACE_RED,
+    MODE_STATE_SPACE_FUNC
 } control_mode_t;
 
 void status_set_control_mode(control_mode_t mode);
 control_mode_t status_get_control_mode(void);
+
+// --- AÑADIDO: ESTADO DE LA BARRA DEL PÉNDULO ---
+typedef enum
+{
+    ROD_LONG,
+    ROD_SHORT
+} pendulum_rod_t;
+
+void status_set_pendulum_rod(pendulum_rod_t rod);
+pendulum_rod_t status_get_pendulum_rod(void);
 
 // --- AÑADIDO: ESTADO DE SELECCIÓN DE PARÁMETROS PID ---
 typedef enum

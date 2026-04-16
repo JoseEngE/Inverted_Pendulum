@@ -27,6 +27,7 @@
 #include "pid_controller.h"
 #include "pulse_counter.h"
 #include "pwm_generator.h"
+#include "system_status.h"
 
 static const char *TAG = "SS_CTRL";
 
@@ -34,49 +35,65 @@ static const char *TAG = "SS_CTRL";
 #define DT (SS_LOOP_PERIOD_MS / 1000.0f)
 
 // Límite de velocidad del carro (m/s) — igual que el integrador previo
-#define VEL_CMD_LIMIT 0.7f
+#define VEL_CMD_LIMIT 1.1f
+#define ACEL_MAX 20.0f
 
 // =============================================================================
 // 1. MATRICES DEL SISTEMA DISCRETO  (calculadas en MATLAB, c2d ZOH, Ts=10 ms)
 //    Orden de estados: [x_pos, x_dot, theta, theta_dot]
 // =============================================================================
 
-//  Ad (4×4) — Matriz de transición de estado
-static const float Ad[4][4] = {{1.0000f, 0.0100f, 0.0000f, 0.0000f},
-                               {0.0000f, 1.0000f, 0.0000f, 0.0000f},
-                               {0.0000f, 0.0000f, 1.0018f, 0.0100f},
-                               {0.0000f, 0.0000f, 0.3681f, 1.0018f}};
+typedef struct {
+  float Ad[4][4];
+  float Bd[4];
+  float Cd[3][4];
+  float L_obs[4][3];
+  float K_x;
+  float K_xdot;
+  float K_theta;
+  float K_w;
+  float K_i;
+} LQR_Params;
 
-//  Bd (4×1) — Vector de entrada discreta
-static const float Bd[4] = {0.000051f, 0.0100f, -0.000375f, -0.0750};
+static const LQR_Params params_long = {
+    .Ad = {{1.0000f, 0.0100f, 0.0000f, 0.0000f},
+           {0.0000f, 1.0000f, 0.0000f, 0.0000f},
+           {0.0000f, 0.0000f, 1.0018f, 0.0100f},
+           {0.0000f, 0.0000f, 0.3681f, 1.0018f}},
+    .Bd = {0.000051f, 0.0100f, -0.000375f, -0.0750},
+    .Cd = {{1.0f, 0.0f, 0.0f, 0.0f},
+           {0.0f, 1.0f, 0.0f, 0.0f},
+           {0.0f, 0.0f, 1.0f, 0.0f}},
+    .L_obs = {{0.3000f, 0.0100f, 0.0000f},
+              {0.0000f, 0.2500f, 0.0000f},
+              {0.0000f, 0.0000f, 0.75f},
+              {0.0000f, 0.0000f, 14.5f}},
+    .K_x = -29.81f,
+    .K_xdot = -21.86,
+    .K_theta = -48.64,
+    .K_w = -7.23,
+    .K_i = -0.0f};
 
-//  Cd (3×4) — Matriz de salida: y = [x_pos, x_dot, theta]
-static const float Cd[3][4] = {
-    {1.0f, 0.0f, 0.0f, 0.0f}, // mide x_pos
-    {0.0f, 1.0f, 0.0f, 0.0f}, // mide x_dot (diferencia finita)
-    {0.0f, 0.0f, 1.0f, 0.0f}  // mide theta
-};
-
-//  L_obs (4×3) — Ganancia del observador
-//  Polos ubicados en {0.40, 0.45, 0.50, 0.55}  →  convergencia ~5× más rápida
-//  que el control Nota: ganancia de 34.73 en fila theta_dot_hat para corrección
-//  agresiva sobre error de theta
-static const float L_obs[4][3] = {{0.5000f, 0.0100f, 0.0000f},
-                                  {0.0000f, 0.4500f, 0.0000f},
-                                  {0.0000f, 0.0000f, 1.1537f},
-                                  {0.0000f, 0.0000f, 33.55973f}};
-
-// =============================================================================
-// 2. GANANCIAS DEL SERVOSISTEMA LQI
-//    Obtenidas con dlqr sobre A_aug (5×5), Q=diag([10,1,100,10,50]), R=1
-//    K_aug  = [K_x, K_xdot, K_theta, K_w, K_i_aug]
-//    K_i aquí ya es -K_aug(5) según la convención del script MATLAB
-// =============================================================================
-static const float K_x = -10.9002f;
-static const float K_xdot = -9.1673f;
-static const float K_theta = -26.4308f;
-static const float K_w = -4.9308f;
-static const float K_i = -6;
+// PLACEHOLDER: Duplicado de la vara larga para la vara corta.
+// Sustituir con valores calculados posteriormente.
+static const LQR_Params params_short = {
+    .Ad = {{1.0000f, 0.0100f, 0.0000f, 0.0000f},
+           {0.0000f, 1.0000f, 0.0000f, 0.0000f},
+           {0.0000f, 0.0000f, 1.0018f, 0.0100f},
+           {0.0000f, 0.0000f, 0.3681f, 1.0018f}},
+    .Bd = {0.000051f, 0.0100f, -0.000375f, -0.0750},
+    .Cd = {{1.0f, 0.0f, 0.0f, 0.0f},
+           {0.0f, 1.0f, 0.0f, 0.0f},
+           {0.0f, 0.0f, 1.0f, 0.0f}},
+    .L_obs = {{0.3000f, 0.0100f, 0.0000f},
+              {0.0000f, 0.2500f, 0.0000f},
+              {0.0000f, 0.0000f, 0.7614f},
+              {0.0000f, 0.0000f, 15.56f}},
+    .K_x = -6.56f,
+    .K_xdot = -8.55,
+    .K_theta = -30.8,
+    .K_w = -2.9708f,
+    .K_i = -01.0f};
 
 // =============================================================================
 // 3. VARIABLES GLOBALES DE ESTADO
@@ -102,7 +119,7 @@ static float g_u_prev = 0.0f;  // u[k-1] usado en la predicción del observador
 static float g_vel_cmd = 0.0f; // velocidad integrada enviada al motor (m/s)
 
 // Referencia de posición (m)
-static float g_ref_posicion = 0.2f;
+static float g_ref_posicion = 0.1f;
 
 // Integrador LQI — 5to estado del sistema aumentado (Ki=1, límites ±2 m·s)
 static PIDController g_ss_integrator;
@@ -115,14 +132,15 @@ static PIDController g_ss_integrator;
 //  El término L·(y − Cd·x̂) corrige la predicción con el error de innovación,
 //  manteniendo el estimador sincronizado con las mediciones reales.
 // =============================================================================
-static void luenberger_update(const float y[3], float u_prev) {
+static void luenberger_update(const LQR_Params *pLQR, const float y[3],
+                              float u_prev) {
   // 1. Innovación: diferencia entre medición real y predicción
   //    innov[i] = y[i] - (Cd · x_hat)[i]
   float innov[3];
   for (int r = 0; r < 3; r++) {
     float cd_xhat = 0.0f;
     for (int c = 0; c < 4; c++)
-      cd_xhat += Cd[r][c] * x_hat[c];
+      cd_xhat += pLQR->Cd[r][c] * x_hat[c];
     innov[r] = y[r] - cd_xhat;
   }
 
@@ -132,12 +150,12 @@ static void luenberger_update(const float y[3], float u_prev) {
   for (int i = 0; i < 4; i++) {
     float pred = 0.0f;
     for (int j = 0; j < 4; j++)
-      pred += Ad[i][j] * x_hat[j];
-    pred += Bd[i] * u_prev;
+      pred += pLQR->Ad[i][j] * x_hat[j];
+    pred += pLQR->Bd[i] * u_prev;
 
     float corr = 0.0f;
     for (int k = 0; k < 3; k++)
-      corr += L_obs[i][k] * innov[k];
+      corr += pLQR->L_obs[i][k] * innov[k];
 
     x_hat_next[i] = pred + corr;
   }
@@ -200,8 +218,8 @@ void state_space_controller_task(void *arg) {
   TickType_t last_wake_time = xTaskGetTickCount();
 
   // Integrador LQI: integra el error de posición  x_i[k+1] = x_i[k] + (r-x)·Ts
-  // Kp=0, Ki=1, Kd=0 → salida = Σ(error)·DT, saturada en ±2 m·s
-  PID_Init(&g_ss_integrator, 0.0f, 1.0f, 0.0f, DT, -0.01f, 0.01f, 0.0f);
+  // Kp=0, Ki=1, Kd=0 → salida = Σ(error)·DT, saturada en ±0.25 m·s
+  PID_Init(&g_ss_integrator, 0.0f, 1.0f, 0.0f, DT, -1000.0f, 1000.0f, 0.03f);
 
   ESP_LOGI(
       TAG,
@@ -215,6 +233,9 @@ void state_space_controller_task(void *arg) {
       continue;
     }
 
+    const LQR_Params *pLQR =
+        (status_get_pendulum_rod() == ROD_LONG) ? &params_long : &params_short;
+
     // ── PASO 1: LECTURA DE SENSORES ────────────────────────────────────
     // θ = 0 en la posición vertical superior (punto de equilibrio)
     g_theta = pulse_counter_get_angle_rad() - (float)M_PI;
@@ -225,13 +246,13 @@ void state_space_controller_task(void *arg) {
 
     // ẋ medida = diferencia finita de posición  (entrada al observador como
     // y[1])
-    float x_dot_meas = (g_x_pos - g_x_pos_prev) / DT;
+    float x_dot_meas = g_vel_cmd;
     g_x_pos_prev = g_x_pos;
 
     // ── PASO 2: ACTUALIZACIÓN DEL OBSERVADOR ───────────────────────────
     // y = [x_pos, x_dot_meas, theta]  → misma estructura que Cd en MATLAB
     float y_meas[3] = {g_x_pos, x_dot_meas, g_theta};
-    luenberger_update(y_meas, g_u_prev);
+    luenberger_update(pLQR, y_meas, g_u_prev);
 
     // Extraer estados estimados del vector x_hat
     // Para estados medibles (x, θ) preferimos la medición directa;
@@ -239,9 +260,6 @@ void state_space_controller_task(void *arg) {
     g_x_dot = x_hat[1]; // ẋ̂  — estimada, reemplaza integral de u
     g_theta_dot_hat =
         x_hat[3]; // θ̂̇  — estimada, reemplaza diferencia finita ruidosa
-
-    // ── PASO 3: INTEGRADOR LQI (5to estado del sistema aumentado) ──────
-    // x_i[k+1] = x_i[k] + (r - x) * Ts
     g_estado_integrador =
         PID_Compute(&g_ss_integrator, g_ref_posicion, g_x_pos);
 
@@ -249,14 +267,15 @@ void state_space_controller_task(void *arg) {
     // u = -(K_x·x + K_xdot·ẋ̂ + K_theta·θ + K_w·θ̂̇ + K_i·x_i)
     // Los estados medibles (x_pos, theta) usan medición directa del sensor.
     // Los estados no medibles (x_dot, theta_dot) usan el estimador.
-    g_u_control = -((K_x * g_x_pos) + (K_xdot * g_x_dot) + (K_theta * g_theta) +
-                    (K_w * g_theta_dot_hat) + (K_i * g_estado_integrador));
+    g_u_control = -((pLQR->K_x * g_x_pos) + (pLQR->K_xdot * g_x_dot) +
+                    (pLQR->K_theta * g_theta) + (pLQR->K_w * g_theta_dot_hat) -
+                    (pLQR->K_i * g_estado_integrador));
 
     // Saturación de seguridad
-    if (g_u_control > 10000.0f)
-      g_u_control = 10000.0f;
-    if (g_u_control < -10000.0f)
-      g_u_control = -10000.0f;
+    if (g_u_control > ACEL_MAX)
+      g_u_control = ACEL_MAX;
+    if (g_u_control < -ACEL_MAX)
+      g_u_control = -ACEL_MAX;
 
     // ── PASO 5: INTEGRAR u → VELOCIDAD PARA EL MOTOR ──────────────────
     // u es una aceleración (m/s²). Integramos para obtener velocidad (m/s).

@@ -11,6 +11,8 @@
 #include "pwm_generator.h"
 #include "system_status.h" // Para manejar el estado del movimiento manual
 #include "state_space_controller.h" // AÑADIDO: LQR state space
+#include "state_space_reducido.h" // AÑADIDO: LQR Reducido
+#include "state_space_funcional.h" // AÑADIDO: LQR Funcional
 #include <stdio.h>
 
 // --- PINES DE LOS BOTONES ---
@@ -56,6 +58,8 @@ static const char *TAG = "BUTTON_HANDLER";
 // --- Contador de posición del carro en micropasos ---
 // static int32_t g_car_position_pulses = 0;
 
+static int32_t g_calibrated_travel_range_pulses = 0; // Guardar el rango de recorrido calibrado
+
 // Función auxiliar para botones de comando (pulsar y soltar)
 static bool is_command_button_pressed(int gpio_num) {
   if (gpio_get_level(gpio_num) == 0) {
@@ -94,7 +98,8 @@ void button_handler_task(void *arg) {
 
   int last_button_state = 1; // 1 = no presionado
   // int last_sequence_button_state = 1;
-  int last_stop_button_state = 1;
+  int last_stop_button_state_right = 1;
+  int last_stop_button_state_left = 1;
   int last_view_button_state = 1;
 
   while (1) {
@@ -109,29 +114,45 @@ void button_handler_task(void *arg) {
     }
     last_view_button_state = current_view_button_state;
     // --- AÑADIDO: Lógica para la Parada de Emergencia (máxima prioridad) ---
-    int current_stop_button_state = gpio_get_level(EMERGENCY_STOP_GPIO_RIGHT);
-    if (last_stop_button_state == 1 && current_stop_button_state == 0) {
+    int current_stop_button_state_right = gpio_get_level(EMERGENCY_STOP_GPIO_RIGHT);
+    if (last_stop_button_state_right == 1 && current_stop_button_state_right == 0) {
 
       if (gpio_get_level(EMERGENCY_STOP_GPIO_RIGHT) == 0) {
         // Llama a la función que solo deshabilita
         pid_force_disable();
         ss_force_disable(); // Detener ambos siempre
+        ss_red_force_disable();
+        ss_func_force_disable();
+
+        // Re-homing dinámico: Si conocemos el centro, recalibramos en el límite negativo (-travel_range/2)
+        if (g_calibrated_travel_range_pulses > 0) {
+            g_car_position_pulses = -(g_calibrated_travel_range_pulses / 2);
+            ESP_LOGW(TAG, "Re-homing RIGHT LIMIT: position reset to %ld", (long)g_car_position_pulses);
+        }
       }
       // vTaskDelay(pdMS_TO_TICKS(50)); // Debounce
     }
-    last_stop_button_state = current_stop_button_state;
+    last_stop_button_state_right = current_stop_button_state_right;
 
-    int current_stop_button_state_new =
+    int current_stop_button_state_left =
         gpio_get_level(EMERGENCY_STOP_GPIO_LEFT);
-    if (last_stop_button_state == 1 && current_stop_button_state_new == 0) {
+    if (last_stop_button_state_left == 1 && current_stop_button_state_left == 0) {
 
       if (gpio_get_level(EMERGENCY_STOP_GPIO_LEFT) == 0) {
         // Llama a la función que solo deshabilita
         pid_force_disable();
         ss_force_disable(); // Detener ambos
+        ss_red_force_disable();
+        ss_func_force_disable();
+
+        // Re-homing dinámico: Si conocemos el centro, recalibramos en el límite positivo (+travel_range/2)
+        if (g_calibrated_travel_range_pulses > 0) {
+            g_car_position_pulses = (g_calibrated_travel_range_pulses / 2);
+            ESP_LOGW(TAG, "Re-homing LEFT LIMIT: position reset to %ld", (long)g_car_position_pulses);
+        }
       }
     }
-    last_stop_button_state = current_stop_button_state_new;
+    last_stop_button_state_left = current_stop_button_state_left;
 
     int current_button_state = gpio_get_level(ENABLE_PID_BUTTON_GPIO);
 
@@ -144,17 +165,31 @@ void button_handler_task(void *arg) {
           gpio_get_level(EMERGENCY_STOP_GPIO_RIGHT) == 1) {
         if(status_get_control_mode() == MODE_PID) {
             if (ss_is_enabled()) ss_force_disable();
+            if (ss_red_is_enabled()) ss_red_force_disable();
+            if (ss_func_is_enabled()) ss_func_force_disable();
             pid_toggle_enable();
+        } else if(status_get_control_mode() == MODE_STATE_SPACE) {
+            if (pid_is_enabled()) pid_force_disable();
+            if (ss_red_is_enabled()) ss_red_force_disable();
+            if (ss_func_is_enabled()) ss_func_force_disable();
+            ss_toggle_enable();
+        } else if(status_get_control_mode() == MODE_STATE_SPACE_RED) {
+            if (pid_is_enabled()) pid_force_disable();
+            if (ss_is_enabled()) ss_force_disable();
+            if (ss_func_is_enabled()) ss_func_force_disable();
+            ss_red_toggle_enable();
         } else {
             if (pid_is_enabled()) pid_force_disable();
-            ss_toggle_enable();
+            if (ss_is_enabled()) ss_force_disable();
+            if (ss_red_is_enabled()) ss_red_force_disable();
+            ss_func_toggle_enable();
         }
       }
     }
     last_button_state = current_button_state;
 
     // Solo permitimos el movimiento manual si NO estamos en vista de sintonización o selección de modo, y el control está apagado
-    if (!pid_is_enabled() && !ss_is_enabled() && status_get_lcd_view() != VIEW_PID_GAINS && status_get_lcd_view() != VIEW_CONTROL_MODE) {
+    if (!pid_is_enabled() && !ss_is_enabled() && !ss_red_is_enabled() && status_get_lcd_view() != VIEW_PID_GAINS && status_get_lcd_view() != VIEW_CONTROL_MODE && status_get_lcd_view() != VIEW_ROD_SELECTION) {
 
       // --- LÓGICA DE CALIBRACIÓN (HOMING) ---
       if (is_command_button_pressed(CALIBRATION_BUTTON_GPIO)) {
@@ -312,10 +347,24 @@ void button_handler_task(void *arg) {
         int right_button_state = gpio_get_level(MANUAL_RIGHT_BUTTON_GPIO);
 
         if (right_button_state == 0 && left_button_state == 1) {
-          status_set_control_mode(MODE_STATE_SPACE);
+          int next_mode = (int)status_get_control_mode() + 1;
+          if (next_mode > 3) next_mode = 0;
+          status_set_control_mode((control_mode_t)next_mode);
           vTaskDelay(pdMS_TO_TICKS(150));
         } else if (left_button_state == 0 && right_button_state == 1) {
-          status_set_control_mode(MODE_PID);
+          int prev_mode = (int)status_get_control_mode() - 1;
+          if (prev_mode < 0) prev_mode = 3;
+          status_set_control_mode((control_mode_t)prev_mode);
+          vTaskDelay(pdMS_TO_TICKS(150));
+        }
+      } else if (status_get_lcd_view() == VIEW_ROD_SELECTION) {
+        int left_button_state = gpio_get_level(MANUAL_LEFT_BUTTON_GPIO);
+        int right_button_state = gpio_get_level(MANUAL_RIGHT_BUTTON_GPIO);
+
+        if ((right_button_state == 0 && left_button_state == 1) || (left_button_state == 0 && right_button_state == 1)) {
+          pendulum_rod_t act = status_get_pendulum_rod();
+          if (act == ROD_LONG) status_set_pendulum_rod(ROD_SHORT);
+          else status_set_pendulum_rod(ROD_LONG);
           vTaskDelay(pdMS_TO_TICKS(150));
         }
       }
@@ -326,7 +375,7 @@ void button_handler_task(void *arg) {
 }
 
 void button_handler_start_calibration(void) {
-  if (pid_is_enabled() || ss_is_enabled()) {
+  if (pid_is_enabled() || ss_is_enabled() || ss_red_is_enabled() || ss_func_is_enabled()) {
     ESP_LOGE(TAG, "No se puede calibrar con el control habilitado.");
     return;
   }
@@ -368,6 +417,7 @@ void button_handler_start_calibration(void) {
 
   // 3. Calcular el centro y mover el carro
   int32_t travel_range = abs(limit_right_pos - limit_left_pos);
+  g_calibrated_travel_range_pulses = travel_range; // GUARDAMOS EL RANGO
   int32_t center_pos = limit_left_pos + (travel_range / 2);
   ESP_LOGW(TAG, "Recorrido: %ld pulsos. Centro: %ld", travel_range, center_pos);
 
@@ -382,7 +432,7 @@ void button_handler_start_calibration(void) {
            g_car_position_pulses);
   ESP_LOGI(TAG, "Esperando 5 segundos para estabilizar...");
 
-  vTaskDelay(pdMS_TO_TICKS(5000));
+  vTaskDelay(pdMS_TO_TICKS(500));
 
   // --- AÑADIDO: Cálculo y establecimiento del setpoint vertical ---
   ESP_LOGI(TAG, "Calculando setpoint vertical...");
