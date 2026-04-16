@@ -45,9 +45,9 @@ typedef struct {
  */
 static const FUNC_Params params_long = {
     .F_func = 0.5000f,
-    .b = {-5.27f, -3.0511f, -717.140f, 3.22f},
-    .G = {-10.4182f, -6.10f, 283.95f, 6.24f},
-    .H_func = 0.3857f,
+    .b = {-6.09f, -4.4684f, -412.62f, 3.8184f},
+    .G = {-12.0077f, -8.9368f, 179.6182f, 7.3966f},
+    .H_func = 0.2213f,
     .K_i = 1.0f // El peso de la integral ya está en b[3] y G[3]
 };
 
