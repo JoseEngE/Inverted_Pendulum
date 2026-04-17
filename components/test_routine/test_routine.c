@@ -11,17 +11,17 @@ static void test_routine_task(void *pvParameters) {
     ESP_LOGI(TAG, "Test routine iniciada. Esperando 5 segundos antes de comenzar...");
     
     // Esperar unos segundos iniciales para permitir estabilización del péndulo real
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    vTaskDelay(pdMS_TO_TICKS(7000));
     
     // 1. Ir a 20 cm
     ESP_LOGI(TAG, "Inyectando perturbación: Setpoint = 0.2 m (20 cm)");
-    status_set_ref_position(0.2f);
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    status_set_ref_position(0.17f);
+    vTaskDelay(pdMS_TO_TICKS(7000));
     
     // 2. Ir a -20 cm
     ESP_LOGI(TAG, "Inyectando perturbación: Setpoint = -0.2 m (-20 cm)");
-    status_set_ref_position(-0.2f);
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    status_set_ref_position(-0.17f);
+    vTaskDelay(pdMS_TO_TICKS(7000));
     
     // 3. Regresar a 0 cm
     ESP_LOGI(TAG, "Fin de rutina. Setpoint = 0.0 m (0 cm)");
