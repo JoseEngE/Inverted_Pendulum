@@ -56,7 +56,7 @@ static const FUNC_Params params_short = {
     .F_func = 0.5000f,
     .b = {-6.0932f, -4.4684f, -411.9038f, 3.8184f},
     .G = {-12.0077f, -8.9368f, 179.6182f, 7.3966f},
-    .H_func = 0.2213f,
+    .H_func = 0.1821f,
     .K_i = 1.0f // El peso de la integral ya está en b[3] y G[3]
 };
 

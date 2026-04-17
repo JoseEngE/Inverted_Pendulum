@@ -117,7 +117,7 @@ static PID_TuningBank bank_long = {
 
 // Placeholder para la vara corta - usa los mismos inicialmente
 static PID_TuningBank bank_short = {
-    .angle_p = -18.0f, .angle_i = -0.0f, .angle_d = -0.03f,
+    .angle_p = -18.0f, .angle_i = -91.0f, .angle_d = -0.03f,
     .pos_p = 0.4f, .pos_i = 0.03f, .pos_d = 0.11f
 };
 
@@ -256,7 +256,7 @@ void pid_controller_task(void *arg) {
   TickType_t last_wake_time = xTaskGetTickCount();
 
   // Inicializar el controlador PID (Salida en aceleración m/s^2)
-  PID_Init(&g_angle_controller, -18.0f, -0.0f, -0.02f, loop_period_in_seconds,
+  PID_Init(&g_angle_controller, -18.0f, -91.0f, -0.02f, loop_period_in_seconds,
            -MAX_ACCEL, MAX_ACCEL, DEAD_BAND_ANGLE);
 
   // Inicializar el controlador de posición (solo proporcional)
