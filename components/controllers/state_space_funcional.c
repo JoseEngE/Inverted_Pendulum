@@ -158,7 +158,7 @@ void state_space_funcional_task(void *arg) {
         // --- PASO 1: LEER SENSORES FÍSICOS ---
         // θ = 0 en vertical arriba. pulse_counter_get_angle_rad() entrega 0 abajo (PI rad en vertical arriba)
         g_theta = pulse_counter_get_angle_rad() - (float)M_PI; 
-        g_x_pos = -pid_get_car_position_m();
+        g_x_pos = pid_get_car_position_m();
         g_x_dot = g_vel_cmd; // Velocidad integrada (cinemática de motor de pasos)
         
         // --- PASO 2: SENSOR VIRTUAL (EL INTEGRADOR) ---
@@ -187,7 +187,7 @@ void state_space_funcional_task(void *arg) {
         if(g_vel_cmd > VEL_MAX) g_vel_cmd = VEL_MAX;
         if(g_vel_cmd < -VEL_MAX) g_vel_cmd = -VEL_MAX;
 
-        set_motor_velocity(-g_vel_cmd);
+        set_motor_velocity(g_vel_cmd);
 
         // --- PASO 5: ACTUALIZAR EL FILTRO (Z_k+1) ---
         // Z_next = F*Z + G1*x + G2*ẋ + G3*θ + G4*xi + H*u

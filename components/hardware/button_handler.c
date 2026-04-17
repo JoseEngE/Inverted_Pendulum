@@ -125,9 +125,9 @@ void button_handler_task(void *arg) {
         ss_red_force_disable();
         ss_func_force_disable();
 
-        // Re-homing dinámico: Si conocemos el centro, recalibramos en el límite negativo (-travel_range/2)
+        // Re-homing dinámico: Si conocemos el centro, recalibramos en el límite positivo (+travel_range/2)
         if (g_calibrated_travel_range_pulses > 0) {
-            g_car_position_pulses = -(g_calibrated_travel_range_pulses / 2);
+            g_car_position_pulses = (g_calibrated_travel_range_pulses / 2);
             ESP_LOGW(TAG, "Re-homing RIGHT LIMIT: position reset to %ld", (long)g_car_position_pulses);
         }
       }
@@ -146,9 +146,9 @@ void button_handler_task(void *arg) {
         ss_red_force_disable();
         ss_func_force_disable();
 
-        // Re-homing dinámico: Si conocemos el centro, recalibramos en el límite positivo (+travel_range/2)
+        // Re-homing dinámico: Si conocemos el centro, recalibramos en el límite negativo (-travel_range/2)
         if (g_calibrated_travel_range_pulses > 0) {
-            g_car_position_pulses = (g_calibrated_travel_range_pulses / 2);
+            g_car_position_pulses = -(g_calibrated_travel_range_pulses / 2);
             ESP_LOGW(TAG, "Re-homing LEFT LIMIT: position reset to %ld", (long)g_car_position_pulses);
         }
       }
@@ -209,7 +209,7 @@ void button_handler_task(void *arg) {
           int64_t current_time = esp_timer_get_time();
           int64_t dt_us = current_time - last_jog_time;
           int32_t pulses_moved = (int32_t)((dt_us * JOG_SPEED_HZ) / 1000000);
-          g_car_position_pulses -= pulses_moved;
+          g_car_position_pulses += pulses_moved;
           last_jog_time = current_time;
         }
       }
@@ -231,7 +231,7 @@ void button_handler_task(void *arg) {
           int64_t current_time = esp_timer_get_time();
           int64_t dt_us = current_time - last_jog_time;
           int32_t pulses_moved = (int32_t)((dt_us * JOG_SPEED_HZ) / 1000000);
-          g_car_position_pulses += pulses_moved;
+          g_car_position_pulses -= pulses_moved;
           last_jog_time = current_time;
         }
       } else {

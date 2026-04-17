@@ -303,7 +303,7 @@ void pid_controller_task(void *arg) {
     // 1. MEDIR estado actual en radianes y la posicón en metros
 
     float current_angle_rad = pulse_counter_get_angle_rad() - (float)M_PI;
-    float current_position_m = -pid_get_car_position_m();
+    float current_position_m = pid_get_car_position_m();
 
     // --- Lógica de control de posición ---
     // El setpoint de posición se obtiene de system_status
@@ -339,7 +339,7 @@ void pid_controller_task(void *arg) {
     g_current_dynamic_angle_setpoint = dynamic_angle_setpoint_rad;
 
     // 6. ACTUAR: Establecer la velocidad del motor
-    set_motor_velocity(-velocity);
+    set_motor_velocity(velocity);
   }
 }
 
@@ -470,7 +470,9 @@ void set_motor_velocity(float velocity_ms) {
 
   // 6. ACTUAR: Si la salida no es cero, enviar comando al motor
   if (abs(target_frequency) > BASE_FREQUENCY / 5) {
-    int direction = (velocity_ms > 0) ? 1 : 0;
+    // es necesario invertir la velocidad para que el motor gire en la dirección
+    // correcta
+    int direction = (-velocity_ms > 0) ? 1 : 0;
 
     int frequency = 0;
     if (abs(target_frequency) < BASE_FREQUENCY) {
@@ -483,9 +485,9 @@ void set_motor_velocity(float velocity_ms) {
     // (aprox)?
     float pulses_this_cycle = (float)frequency * (PID_LOOP_PERIOD_MS / 1000.0f);
     if (direction == 1) {
-      g_car_position_pulses += (int32_t)pulses_this_cycle;
-    } else {
       g_car_position_pulses -= (int32_t)pulses_this_cycle;
+    } else {
+      g_car_position_pulses += (int32_t)pulses_this_cycle;
     }
 
     // Enviar el comando de velocidad continua
