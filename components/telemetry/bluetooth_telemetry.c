@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 
 #include "bluetooth_telemetry.h"
@@ -22,6 +23,7 @@
 #include "pulse_counter.h"
 #include "state_space_controller.h"
 #include "state_space_reducido.h"
+#include "state_space_funcional.h"
 #include "system_status.h"
 #include "test_routine.h"
 
@@ -239,10 +241,23 @@ static void bluetooth_telemetry_task(void *arg) {
           if (len > 0) {
             esp_spp_write(spp_handle, len, (uint8_t *)packet);
           }
+        } else if (ss_func_is_enabled()) {
+          // tiempo_ms, angulo, posicion, accion_control, velocidad, velocidad_angular
+          float theta = ss_func_get_theta() - (float)M_PI;
+          float x_pos = ss_func_get_x_pos();
+          float u_ctrl = ss_func_get_u_control(); // Control Action
+          float x_dot = ss_func_get_x_dot();
+          float theta_dot = ss_func_get_theta_dot_hat();
+          
+          int len = snprintf(packet, sizeof(packet), "%llu,%.4f,%.4f,%.4f,%.4f,%.4f,%.4f\r\n",
+                             time_ms, theta, x_pos, u_ctrl, x_dot, theta_dot, status_get_ref_position());
+          if (len > 0) {
+            esp_spp_write(spp_handle, len, (uint8_t *)packet);
+          }
         } else {
           // tiempo_ms, angulo, posicion, accion_control, velocidad, velocidad_angular
           // tiempo_ms, angulo, posicion, accion_control(acel), velocidad_carro, velocidad_angular
-          float theta     = pulse_counter_get_angle_rad();
+          float theta     = pulse_counter_get_angle_rad() - (float)M_PI;
           float x_pos     = pid_get_car_position_m();
           float u_ctrl    = pid_get_acceleration();      // salida del PID de ángulo (m/s²)
           float vel       = pid_get_velocity();           // velocidad del carro (m/s)

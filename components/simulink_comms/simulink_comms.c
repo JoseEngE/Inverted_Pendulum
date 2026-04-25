@@ -19,12 +19,14 @@
 #include "esp_log.h"
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 // Application-layer includes to read sensor/controller state
 #include "pid_controller.h"
 #include "pulse_counter.h"
 #include "state_space_controller.h"
 #include "state_space_reducido.h"
+#include "state_space_funcional.h"
 #include "system_status.h"
 
 static const char *TAG = "SIM_COMM";
@@ -108,10 +110,19 @@ static void tx_task(void *pvParameters)
             vars[4] = ss_red_get_x_dot();
             vars[5] = ss_red_get_theta_dot_hat();
             vars[6] = status_get_ref_position();
+        } else if (ss_func_is_enabled()) {
+            // State-space FUNCTIONAL controller active
+            vars[0] = (float)pid_get_run_time_ms();
+            vars[1] = ss_func_get_theta();
+            vars[2] = ss_func_get_x_pos();
+            vars[3] = ss_func_get_u_control();
+            vars[4] = ss_func_get_x_dot();
+            vars[5] = ss_func_get_theta_dot_hat();
+            vars[6] = status_get_ref_position();
         } else {
             // PID controller (or idle) - now exposes all 6 variables
             vars[0] = (float)pid_get_run_time_ms();
-            vars[1] = pulse_counter_get_angle_rad();  // theta (rad)
+            vars[1] = pulse_counter_get_angle_rad() - (float)M_PI;  // theta (rad)
             vars[2] = pid_get_car_position_m();        // x_pos (m)
             vars[3] = pid_get_acceleration();          // u_control = aceleración (m/s²)
             vars[4] = pid_get_velocity();              // x_dot = velocidad carro (m/s)
