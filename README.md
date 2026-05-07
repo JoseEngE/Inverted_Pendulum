@@ -2,6 +2,12 @@
 
 Control de un **péndulo invertido sobre carro deslizante** implementado en C con ESP-IDF (FreeRTOS), con soporte para dos estrategias de control intercambiables en tiempo real: **PID en cascada** y **realimentación de estados (LQI)**.
 
+
+
+https://github.com/user-attachments/assets/26573d14-ec2b-4e3e-8006-042fb880474b
+
+
+
 # Integrantes
 
 **Aitor Biardeau**
