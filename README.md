@@ -6,10 +6,9 @@ Control de un **péndulo invertido sobre carro deslizante** implementado en C co
 
 **Aitor Biardeau**
 
-Emerson Warhman
+**Emerson Warhman**
 
-Jose Hernandez
----
+**Jose Hernandez**
 
 ## 📁 Estructura del Proyecto
 
